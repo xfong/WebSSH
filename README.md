@@ -61,26 +61,38 @@ WebSSH/
 
 ## Prerequisites
 
-The following must be installed on the host server before running `setup.sh`:
+All prerequisites are installed automatically by running `prereq.sh` (see Installation below). For reference, the script installs the following on Ubuntu 24.04 LTS:
 
-- Docker Engine (v24+)
-- Docker Compose v2 (`docker compose`)
-- OpenSSL
-- Node.js (v18+) — used only during setup to hash the admin password
+| Package | Minimum Version | Purpose |
+|---|---|---|
+| Docker Engine | v24+ | Container runtime |
+| Docker Compose v2 | v2.0+ | Multi-container orchestration |
+| OpenSSL | Any | Self-signed TLS certificate generation |
+| Node.js | v18+ | Frontend build and admin password hashing |
+| npm | Bundled with Node.js | Package management |
+| OpenSSH client | Any | SSH connectivity testing |
+| bcrypt (npm) | v5+ | Admin password hashing during setup |
+| git | Any | Repository cloning |
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Clone the repository
+# 1. Install all prerequisites (Docker, Node.js, OpenSSL, etc.)
+#    Must be run as root on the target server, BEFORE cloning.
+curl -fsSL https://raw.githubusercontent.com/xfong/WebSSH/main/scripts/prereq.sh | sudo bash
+
+# 2. Log out and back in to activate docker group membership, then:
+
+# 3. Clone the repository
 git clone https://github.com/xfong/WebSSH.git
 cd WebSSH
 
-# 2. Build the frontend
+# 4. Build the frontend
 cd frontend && npm install && npm run build && cd ..
 
-# 3. Run the setup script
+# 5. Run the setup script
 bash scripts/setup.sh
 ```
 
