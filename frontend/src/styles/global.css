@@ -1,0 +1,100 @@
+/* ── CSS custom properties ─────────────────────────────────────────────────── */
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f4f4f5;
+  --color-border: #d4d4d8;
+  --color-text: #18181b;
+  --color-text-muted: #71717a;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-success: #16a34a;
+  --color-node-hover: #e4e4e7;
+  --color-node-selected: #dbeafe;
+  --radius: 6px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[data-theme='dark'] {
+  --color-bg: #09090b;
+  --color-surface: #18181b;
+  --color-border: #27272a;
+  --color-text: #fafafa;
+  --color-text-muted: #a1a1aa;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+  --color-success: #22c55e;
+  --color-node-hover: #27272a;
+  --color-node-selected: #1e3a5f;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme='system'] {
+    --color-bg: #09090b;
+    --color-surface: #18181b;
+    --color-border: #27272a;
+    --color-text: #fafafa;
+    --color-text-muted: #a1a1aa;
+    --color-primary: #3b82f6;
+    --color-primary-hover: #60a5fa;
+    --color-danger: #ef4444;
+    --color-danger-hover: #f87171;
+    --color-success: #22c55e;
+    --color-node-hover: #27272a;
+    --color-node-selected: #1e3a5f;
+  }
+}
+
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.4rem 0.9rem;
+  background: var(--color-primary);
+  color: #fff;
+  transition: background 0.15s;
+}
+button:hover { background: var(--color-primary-hover); }
+button.danger { background: var(--color-danger); }
+button.danger:hover { background: var(--color-danger-hover); }
+button.ghost {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+button.ghost:hover { background: var(--color-node-hover); }
+
+input, select {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.7rem;
+  width: 100%;
+}
+input:focus, select:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
