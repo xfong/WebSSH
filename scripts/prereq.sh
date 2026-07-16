@@ -115,12 +115,12 @@ section "Step 7: Installing Node.js LTS"
 
 if command -v node &>/dev/null; then
   NODE_VER=$(node --version)
-  # Require Node.js v18 or higher
+  # Require Node.js v22 or higher
   NODE_MAJOR=$(echo "$NODE_VER" | sed 's/v\([0-9]*\).*/\1/')
-  if [[ "$NODE_MAJOR" -ge 18 ]]; then
+  if [[ "$NODE_MAJOR" -ge 22 ]]; then
     info "Node.js already installed: $NODE_VER — skipping."
   else
-    warn "Node.js $NODE_VER is below the required v18. Upgrading..."
+    warn "Node.js $NODE_VER is below the required v22. Upgrading to Node.js 22 LTS..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
     info "Node.js upgraded: $(node --version)"

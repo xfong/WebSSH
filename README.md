@@ -68,7 +68,7 @@ All prerequisites are installed automatically by running `prereq.sh` (see Instal
 | Docker Engine | v24+ | Container runtime |
 | Docker Compose v2 | v2.0+ | Multi-container orchestration |
 | OpenSSL | Any | Self-signed TLS certificate generation |
-| Node.js | v18+ | Frontend build and admin password hashing |
+| Node.js | v22+ | Frontend build and admin password hashing |
 | npm | Bundled with Node.js | Package management |
 | OpenSSH client | Any | SSH connectivity testing |
 | bcrypt (npm) | v5+ | Admin password hashing during setup |
