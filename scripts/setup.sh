@@ -64,26 +64,25 @@ done
 # ── 3. Generate bcrypt hash for admin password ────────────────────────────────
 echo ""
 echo "Generating admin password hash..."
-ADMIN_PASSWORD_HASH=$(node -e "
-const crypto = require('crypto');
-// Use Node built-in crypto for a simple bcrypt-compatible approach via npm
-// We call bcrypt via a one-liner if available, otherwise fall back to a note
-try {
-  const bcrypt = require('bcrypt');
-  bcrypt.hash('${ADMIN_PASS}', 12).then(h => { process.stdout.write(h); process.exit(0); });
-} catch(e) {
-  // bcrypt not available globally; install it first
-  process.stderr.write('bcrypt not found\n');
-  process.exit(1);
-}
-" 2>/dev/null) || {
-  echo "  bcrypt npm package not found. Installing temporarily..."
-  npm install -g bcrypt --silent 2>/dev/null || true
-  ADMIN_PASSWORD_HASH=$(node -e "
-    const bcrypt = require('bcrypt');
-    bcrypt.hash('${ADMIN_PASS}', 12).then(h => { process.stdout.write(h); process.exit(0); });
-  ")
-}
+
+# Install bcrypt into a temporary directory so require() can always find it,
+# regardless of global npm prefix configuration.
+BCRYPT_TMP=$(mktemp -d)
+trap 'rm -rf "$BCRYPT_TMP"' EXIT
+
+(cd "$BCRYPT_TMP" && npm init -y --silent >/dev/null 2>&1 && npm install bcrypt --silent >/dev/null 2>&1)
+
+# Write a small helper script that reads the password from an environment
+# variable — this avoids all shell quoting/injection issues entirely.
+cat > "$BCRYPT_TMP/hash.js" <<'JSEOF'
+const bcrypt = require('./node_modules/bcrypt');
+bcrypt.hash(process.env.WEBSSH_ADMIN_PASS, 12).then(h => {
+  process.stdout.write(h);
+  process.exit(0);
+});
+JSEOF
+
+ADMIN_PASSWORD_HASH=$(WEBSSH_ADMIN_PASS="${ADMIN_PASS}" node "$BCRYPT_TMP/hash.js")
 echo "  Admin password hash generated."
 
 # ── 4. Generate JWT secret ────────────────────────────────────────────────────
