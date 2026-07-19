@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: nginx:bookworm
     container_name: webssh_nginx
     restart: unless-stopped
     ports:
@@ -33,7 +33,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   redis:
-    image: redis:alpine
+    image: redis:bookworm
     container_name: webssh_redis
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning

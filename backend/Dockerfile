@@ -1,10 +1,12 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
 # Install native build tools required by ssh2 and bcrypt
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install all dependencies (including devDependencies for TypeScript compiler)
 COPY package*.json ./
@@ -16,12 +18,15 @@ COPY src/ ./src/
 RUN npm run build
 
 # ── Stage 2: Production image ─────────────────────────────────────────────────
-FROM node:22-alpine AS production
+FROM node:22-bookworm-slim AS production
 
 WORKDIR /app
 
-# Install native build tools needed at runtime by ssh2 and bcrypt
-RUN apk add --no-cache python3 make g++ openssh-client
+# Install native build tools needed at runtime by ssh2 and bcrypt,
+# plus openssh-client for SSH connectivity
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ openssh-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies only
 COPY package*.json ./
