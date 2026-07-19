@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # WebSSH Setup Script
 # Run this once on the host server to configure and launch the application.
-# Requirements: Docker, Docker Compose v2, OpenSSL, Node.js (for bcrypt hash)
+# Requirements: Docker, Docker Compose v2, OpenSSL, Node.js v22+
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -139,7 +139,15 @@ NODE_ENV=production
 EOF
 echo "  .env written."
 
-# ── 8. Build and start containers ─────────────────────────────────────────────
+# ── 8. Build frontend static assets ──────────────────────────────────────────
+echo ""
+echo "Building frontend..."
+cd "$REPO_ROOT/frontend"
+npm install --silent
+npm run build
+echo "  Frontend built. Output in frontend/dist/"
+
+# ── 9. Build and start Docker containers ──────────────────────────────────────
 echo ""
 echo "Building and starting Docker containers..."
 cd "$REPO_ROOT"

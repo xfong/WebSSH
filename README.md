@@ -79,7 +79,7 @@ All prerequisites are installed automatically by running `prereq.sh` (see Instal
 ## Installation
 
 ```bash
-# 1. Install all prerequisites (Docker, Node.js, OpenSSL, etc.)
+# 1. Install all prerequisites (Docker, Node.js v22+, OpenSSL, etc.)
 #    Must be run as root on the target server, BEFORE cloning.
 curl -fsSL https://raw.githubusercontent.com/xfong/WebSSH/main/scripts/prereq.sh | sudo bash
 
@@ -89,10 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/xfong/WebSSH/main/scripts/prereq.sh
 git clone https://github.com/xfong/WebSSH.git
 cd WebSSH
 
-# 4. Build the frontend
-cd frontend && npm install && npm run build && cd ..
-
-# 5. Run the setup script
+# 4. Run the setup script (builds frontend and starts all containers)
 bash scripts/setup.sh
 ```
 
@@ -101,7 +98,9 @@ The `setup.sh` script will:
 1. Prompt for LDAP server details, admin credentials, and SSH host configuration.
 2. Generate a self-signed TLS certificate for HTTPS.
 3. Write a `.env` configuration file.
-4. Build and start all Docker containers via `docker compose up -d`.
+4. Build the React frontend (`frontend/dist/`) using Node.js on the host.
+5. Build all Docker container images (backend TypeScript is compiled inside Docker via multi-stage build).
+6. Start all containers via `docker compose up -d`.
 
 After setup, open `https://<your-server-hostname>` in your browser. Accept the self-signed certificate warning on first visit.
 
