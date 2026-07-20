@@ -119,6 +119,9 @@ fi
 # Use Python to write the .env file so that special characters in values
 # (especially $ signs in bcrypt hashes and JWT secrets) are written verbatim
 # without shell expansion or Docker Compose variable substitution issues.
+# All variables must be exported so that Python's os.environ can access them.
+export SERVER_HOSTNAME JWT_SECRET ADMIN_USERNAME ADMIN_PASSWORD_HASH
+export LDAP_HOST LDAP_BASE_DN LDAP_USER_DN_TEMPLATE SSH_HOST SSH_PORT ENV_FILE
 echo ""
 echo "Writing .env configuration file..."
 python3 - <<PYEOF
