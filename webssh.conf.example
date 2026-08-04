@@ -22,10 +22,19 @@ SERVER_HOSTNAME=
 # ── LDAP ─────────────────────────────────────────────────────────────────────
 
 # LDAP_HOST
-#   Hostname or IP address of the LDAP server used to authenticate users.
-#   The backend will first attempt a secure LDAPS connection (port 636).
-#   If that fails, it will fall back to plain LDAP (port 389).
-#   Example: ldap.example.com  or  192.168.1.10
+#   Hostname(s) or IP address(es) of the LDAP server(s) used to authenticate
+#   users. Multiple servers may be specified as a comma-separated list; they
+#   are tried in order (ordered failover). If a server is unreachable or
+#   returns an error, the next server in the list is tried. If a server
+#   returns a definitive authentication failure (wrong credentials), no
+#   further servers are tried.
+#
+#   Secure connections are REQUIRED. For each server, the backend first
+#   attempts LDAPS (port 636). If LDAPS fails, it falls back to STARTTLS
+#   (port 389 upgraded to TLS). Plain unencrypted LDAP is never used.
+#
+#   Single server example:  ldap.example.com
+#   Multi-server example:   ldap1.example.com,ldap2.example.com,ldap3.example.com
 LDAP_HOST=
 
 # LDAP_BASE_DN
