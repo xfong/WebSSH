@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# WebSSH Configuration File
+# Copy this file to webssh.conf (in the same directory) and edit the values
+# before running setup.sh. webssh.conf is gitignored; this example file is not.
+# Lines starting with # are comments and are ignored by setup.sh.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Server ────────────────────────────────────────────────────────────────────
+# Hostname of this server (used in the TLS certificate CN and SAN).
+# Leave blank to auto-detect using the system hostname.
+SERVER_HOSTNAME=
+
+# ── LDAP ─────────────────────────────────────────────────────────────────────
+# Hostname or IP address of the LDAP server.
+LDAP_HOST=
+
+# LDAP base DN (e.g. dc=example,dc=com).
+LDAP_BASE_DN=
+
+# DN template for user authentication. Use {username} as a placeholder.
+# Example: uid={username},ou=users,dc=example,dc=com
+LDAP_USER_DN_TEMPLATE=
+
+# Path to the LDAP server's CA certificate (PEM format).
+# Required for LDAPS (TLS) connections. Leave blank to skip.
+LDAP_CA_CERT_PATH=
+
+# ── SSH ───────────────────────────────────────────────────────────────────────
+# Hostname or IP of the SSH target server.
+# Use host.docker.internal to connect to the Docker host itself.
+SSH_HOST=host.docker.internal
+
+# SSH port.
+SSH_PORT=22
+
+# ── Admin account ─────────────────────────────────────────────────────────────
+# Username for the local administrator account (not LDAP).
+ADMIN_USERNAME=admin
+
+# ── Ports ─────────────────────────────────────────────────────────────────────
+# HTTPS port exposed by Nginx.
+HTTPS_PORT=443
+
+# HTTP port (redirects to HTTPS).
+HTTP_PORT=80
+
+# Xpra session port range (one port per active X11 session).
+XPRA_PORT_START=10000
+XPRA_PORT_END=11000

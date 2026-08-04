@@ -1,6 +1,10 @@
 # Environment
 .env
 
+# Local configuration (contains site-specific values; do not commit)
+# Copy webssh.conf, fill in your values, and keep it local.
+webssh.conf
+
 # Node
 node_modules/
 dist/
