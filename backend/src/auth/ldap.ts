@@ -73,10 +73,17 @@ function tryStartTlsBind(host: string, dn: string, password: string): Promise<bo
   });
 }
 
+/** Build a plain (unencrypted) ldapjs client for a given host (port 389). */
+function buildPlainClient(host: string): ldap.Client {
+  return ldap.createClient({ url: `ldap://${host}:389` });
+}
+
 /**
  * Try to authenticate a user against a single LDAP server.
- * Attempts LDAPS first; if that fails, falls back to STARTTLS.
- * Plain (unencrypted) LDAP is never used.
+ * Connection attempts are made in this order:
+ *   1. LDAPS       — port 636, TLS from the start
+ *   2. STARTTLS    — port 389, upgraded to TLS
+ *   3. Plain LDAP  — port 389, unencrypted (fallback of last resort)
  * Returns true if authentication succeeded, false otherwise.
  */
 async function tryServer(host: string, dn: string, password: string): Promise<boolean> {
@@ -94,7 +101,16 @@ async function tryServer(host: string, dn: string, password: string): Promise<bo
     const ok = await tryStartTlsBind(host, dn, password);
     if (ok) return true;
   } catch {
-    // STARTTLS also failed
+    // STARTTLS also failed — try plain LDAP
+  }
+
+  // 3. Try plain LDAP (port 389, unencrypted)
+  try {
+    const client = buildPlainClient(host);
+    const ok = await tryLdapsBind(client, dn, password);
+    if (ok) return true;
+  } catch {
+    // Plain LDAP also failed
   }
 
   return false;

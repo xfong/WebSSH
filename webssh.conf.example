@@ -29,9 +29,10 @@ SERVER_HOSTNAME=
 #   returns a definitive authentication failure (wrong credentials), no
 #   further servers are tried.
 #
-#   Secure connections are REQUIRED. For each server, the backend first
-#   attempts LDAPS (port 636). If LDAPS fails, it falls back to STARTTLS
-#   (port 389 upgraded to TLS). Plain unencrypted LDAP is never used.
+#   For each server, connections are attempted in this order:
+#     1. LDAPS       (port 636)  — TLS from the start
+#     2. STARTTLS    (port 389)  — plain connection upgraded to TLS
+#     3. Plain LDAP  (port 389)  — unencrypted, fallback of last resort
 #
 #   Single server example:  ldap.example.com
 #   Multi-server example:   ldap1.example.com,ldap2.example.com,ldap3.example.com
