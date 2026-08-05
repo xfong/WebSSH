@@ -4,8 +4,12 @@ import { openSSHSession, resizeSSHSession, closeSSHSession } from '../ssh/manage
 import { AuthPayload } from '../middleware/auth';
 import { redis } from '../session/store';
 
-export function registerTerminalNamespace(io: SocketIOServer): void {
+export function registerTerminalNamespace(
+  io: SocketIOServer,
+  middleware: (socket: Socket, next: (err?: Error) => void) => void
+): void {
   const ns: Namespace = io.of('/ws/terminal');
+  ns.use(middleware);
 
   ns.on('connection', async (socket: Socket) => {
     const auth = socket.data.auth as AuthPayload;

@@ -35,8 +35,12 @@ async function broadcastFullAdminTree(ns: Namespace): Promise<void> {
   ns.to('admin').emit('admin_tree_update', { tree: fullTree });
 }
 
-export function registerControlNamespace(io: SocketIOServer): void {
+export function registerControlNamespace(
+  io: SocketIOServer,
+  middleware: (socket: Socket, next: (err?: Error) => void) => void
+): void {
   const ns: Namespace = io.of('/ws/control');
+  ns.use(middleware);
 
   ns.on('connection', async (socket: Socket) => {
     const auth = socket.data.auth as AuthPayload;

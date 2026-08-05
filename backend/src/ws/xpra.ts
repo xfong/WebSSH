@@ -8,8 +8,12 @@ import { AuthPayload } from '../middleware/auth';
  * Proxies the Xpra HTML5 WebSocket protocol between the browser client
  * and the Xpra daemon running in the xpra container.
  */
-export function registerXpraNamespace(io: SocketIOServer): void {
+export function registerXpraNamespace(
+  io: SocketIOServer,
+  middleware: (socket: Socket, next: (err?: Error) => void) => void
+): void {
   const ns: Namespace = io.of('/ws/xpra');
+  ns.use(middleware);
 
   ns.on('connection', async (socket: Socket) => {
     const auth = socket.data.auth as AuthPayload;
