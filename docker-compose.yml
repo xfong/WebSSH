@@ -25,6 +25,10 @@ services:
       - .env
     volumes:
       - ./docker/nginx/ssl/ldap-ca.crt:/app/certs/ldap-ca.crt:ro
+      # PAM helper Unix socket (host-side service → container)
+      # The socket is created by webssh-pam-helper.service on the host.
+      # If the socket does not exist, the backend falls back to direct LDAP.
+      - /run/webssh/pam.sock:/run/webssh/pam.sock
     depends_on:
       - redis
     networks:

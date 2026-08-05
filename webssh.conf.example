@@ -64,6 +64,24 @@ LDAP_USER_DN_TEMPLATE=
 #   Example: /usr/local/share/ca-certificates/ldap-ca.crt
 LDAP_CA_CERT_PATH=
 
+# ── PAM Authentication ───────────────────────────────────────────────────────
+
+# PAM_SERVICE
+#   The PAM service name used by the webssh-pam-helper to authenticate users.
+#   This corresponds to a file in /etc/pam.d/ on the host machine.
+#   The service defines which PAM modules are invoked (e.g. pam_sss for SSSD,
+#   pam_unix for local accounts, pam_faillock for lockout policies, etc.).
+#
+#   Common values:
+#     login    - uses /etc/pam.d/login (standard interactive login stack)
+#     sshd     - uses /etc/pam.d/sshd (SSH login stack, often identical to login)
+#     su       - uses /etc/pam.d/su
+#
+#   Use 'login' unless you have a specific reason to use a different service.
+#   If left blank, the helper defaults to 'login'.
+#   Default: login
+PAM_SERVICE=login
+
 # ── SSH ───────────────────────────────────────────────────────────────────────
 
 # SSH_HOST

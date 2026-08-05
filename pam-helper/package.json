@@ -1,0 +1,15 @@
+{
+  "name": "webssh-pam-helper",
+  "version": "1.0.0",
+  "description": "Privileged host-side PAM authentication helper for WebSSH. Listens on a Unix socket and authenticates users via the host PAM stack (SSSD).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "authenticate-pam": "^1.0.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

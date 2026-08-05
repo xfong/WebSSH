@@ -1,0 +1,33 @@
+[Unit]
+Description=WebSSH PAM Authentication Helper
+Documentation=https://github.com/xfong/WebSSH
+After=network.target sssd.service
+Wants=sssd.service
+
+[Service]
+Type=simple
+# Must run as root to call pam_authenticate() on behalf of other users.
+User=root
+Group=root
+WorkingDirectory=/opt/webssh-pam-helper
+ExecStart=/usr/bin/node /opt/webssh-pam-helper/index.js
+Restart=on-failure
+RestartSec=5s
+
+# Socket and service configuration (overridable via environment or drop-ins).
+Environment=WEBSSH_PAM_SOCKET=/run/webssh/pam.sock
+Environment=WEBSSH_PAM_SERVICE=login
+# Set WEBSSH_SOCKET_GID to the numeric GID of the group that should be able
+# to connect to the socket (e.g. the GID of the 'webssh' group).
+# This is set automatically by setup.sh.
+# Environment=WEBSSH_SOCKET_GID=1234
+
+# Security hardening (compatible with needing root for PAM).
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/webssh
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

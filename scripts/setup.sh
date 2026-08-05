@@ -261,7 +261,73 @@ with open(os.environ["ENV_FILE"], "w") as f:
 PYEOF
 echo "  .env written."
 
-# ── 9. Build frontend static assets ──────────────────────────────────────────
+# ── 9. Install and start the PAM authentication helper ───────────────────────
+echo ""
+echo "Setting up PAM authentication helper..."
+
+PAM_HELPER_SRC="$REPO_ROOT/pam-helper"
+PAM_HELPER_DEST="/opt/webssh-pam-helper"
+PAM_SERVICE_FILE="/etc/systemd/system/webssh-pam-helper.service"
+PAM_SERVICE_NAME="${PAM_SERVICE:-login}"
+PAM_SOCKET_DIR="/run/webssh"
+
+# Create the webssh system group if it does not exist.
+# The Docker container's process will be added to this group so it can
+# connect to the PAM socket.
+if ! getent group webssh &>/dev/null; then
+  groupadd --system webssh
+  echo "  Created system group 'webssh'."
+fi
+WEBSSH_GID=$(getent group webssh | cut -d: -f3)
+
+# Copy the helper to its install location.
+rm -rf "$PAM_HELPER_DEST"
+cp -r "$PAM_HELPER_SRC" "$PAM_HELPER_DEST"
+
+# Install Node.js production dependencies.
+(cd "$PAM_HELPER_DEST" && npm install --omit=dev --silent)
+echo "  PAM helper installed to $PAM_HELPER_DEST."
+
+# Create the socket directory with correct permissions.
+mkdir -p "$PAM_SOCKET_DIR"
+chown root:webssh "$PAM_SOCKET_DIR"
+chmod 750 "$PAM_SOCKET_DIR"
+
+# Write the systemd service unit, substituting the PAM service name and GID.
+cat > "$PAM_SERVICE_FILE" <<SVCEOF
+[Unit]
+Description=WebSSH PAM Authentication Helper
+Documentation=https://github.com/xfong/WebSSH
+After=network.target sssd.service
+Wants=sssd.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=$PAM_HELPER_DEST
+ExecStart=/usr/bin/node $PAM_HELPER_DEST/index.js
+Restart=on-failure
+RestartSec=5s
+Environment=WEBSSH_PAM_SOCKET=$PAM_SOCKET_DIR/pam.sock
+Environment=WEBSSH_PAM_SERVICE=$PAM_SERVICE_NAME
+Environment=WEBSSH_SOCKET_GID=$WEBSSH_GID
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$PAM_SOCKET_DIR
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+systemctl daemon-reload
+systemctl enable webssh-pam-helper
+systemctl restart webssh-pam-helper
+echo "  webssh-pam-helper service enabled and started."
+
+# ── 10. Build frontend static assets ──────────────────────────────────────────
 echo ""
 echo "Building frontend..."
 cd "$REPO_ROOT/frontend"
