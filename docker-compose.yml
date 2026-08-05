@@ -23,6 +23,12 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # Add the 'webssh' group so the container process can connect to the PAM
+    # helper Unix socket (/run/webssh/pam.sock), which is owned root:webssh 0660.
+    # The GID is substituted by setup.sh when it creates the group.
+    # If group_add is not set, the container falls back to direct LDAP.
+    group_add:
+      - "${WEBSSH_GID:-}"
     volumes:
       - ./docker/nginx/ssl/ldap-ca.crt:/app/certs/ldap-ca.crt:ro
       # PAM helper Unix socket (host-side service → container)

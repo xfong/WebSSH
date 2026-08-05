@@ -223,6 +223,12 @@ fi
 export SERVER_HOSTNAME JWT_SECRET ADMIN_USERNAME ADMIN_PASSWORD_HASH
 export LDAP_HOST LDAP_BASE_DN LDAP_USER_DN_TEMPLATE SSH_HOST SSH_PORT ENV_FILE
 export HTTPS_PORT HTTP_PORT XPRA_PORT_START XPRA_PORT_END
+# WEBSSH_GID is written to .env so docker-compose.yml can use it in group_add
+# to grant the app container access to the PAM helper Unix socket.
+# It is set after the webssh group is created in step 9; pre-populate with
+# an empty string here so Python does not raise a KeyError if step 9 has
+# not run yet (e.g. on a fresh run where the group will be created shortly).
+export WEBSSH_GID=""
 echo ""
 echo "Writing .env configuration file..."
 python3 - <<PYEOF
@@ -255,6 +261,10 @@ lines = [
     "TLS_CERT_FILE=server.crt",
     "TLS_KEY_FILE=server.key",
     "NODE_ENV=production",
+    # WEBSSH_GID is used by docker-compose.yml group_add so the app container
+    # can access the PAM helper Unix socket. Written as a plain variable
+    # (not via env_file) to avoid Docker Compose interpolation issues.
+    "WEBSSH_GID=" + os.environ.get("WEBSSH_GID", ""),
 ]
 with open(os.environ["ENV_FILE"], "w") as f:
     f.write("\n".join(lines) + "\n")
@@ -279,6 +289,12 @@ if ! getent group webssh &>/dev/null; then
   echo "  Created system group 'webssh'."
 fi
 WEBSSH_GID=$(getent group webssh | cut -d: -f3)
+export WEBSSH_GID
+
+# Update the .env file with the real WEBSSH_GID now that the group exists.
+# sed replaces the placeholder empty value written earlier by the Python block.
+sed -i "s/^WEBSSH_GID=.*/WEBSSH_GID=${WEBSSH_GID}/" "$ENV_FILE"
+echo "  WEBSSH_GID set to ${WEBSSH_GID} in .env."
 
 # Copy the helper to its install location.
 rm -rf "$PAM_HELPER_DEST"

@@ -5,9 +5,12 @@ import fs from 'fs';
 // Servers are tried in order; the first one that successfully authenticates
 // the user wins. Plain LDAP (unencrypted) is never used — only LDAPS and
 // STARTTLS are attempted.
+// Strip any ldap:// or ldaps:// protocol prefix that may have been included
+// in the LDAP_HOST config value (e.g. "ldaps://host.example.com").
+// The code constructs the correct URL scheme internally.
 const LDAP_HOSTS: string[] = (process.env.LDAP_HOST || '')
   .split(',')
-  .map(h => h.trim())
+  .map(h => h.trim().replace(/^ldaps?:\/\//i, ''))
   .filter(h => h.length > 0);
 
 const LDAP_USER_DN_TEMPLATE = process.env.LDAP_USER_DN_TEMPLATE!;

@@ -26,10 +26,17 @@ export function registerAuthRoutes(app: Express): void {
     }
 
     // ── Step 1: Admin check (local account, independent of PAM/LDAP) ──────────
-    const isAdmin = await authenticateAdmin(username, password);
-    if (isAdmin) {
-      const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      return res.json({ token, role: 'admin', username });
+    // If the username matches the configured admin username, the result of the
+    // local bcrypt check is FINAL — do not fall through to PAM or LDAP.
+    const ADMIN_USERNAME = process.env.ADMIN_USERNAME!;
+    if (username === ADMIN_USERNAME) {
+      const isAdmin = await authenticateAdmin(username, password);
+      if (isAdmin) {
+        const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+        return res.json({ token, role: 'admin', username });
+      }
+      // Username is the admin account but password is wrong — reject immediately.
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // ── Step 2: PAM authentication (primary path for regular users) ───────────
