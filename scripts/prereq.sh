@@ -159,8 +159,15 @@ else
   info "OpenSSH client installed."
 fi
 
-# ── 11. bcrypt via npm (used by setup.sh to hash admin password) ──────────────
-section "Step 11: Installing bcrypt (npm global)"
+# ── 11. PAM development libraries (required by authenticate-pam npm module) ──────
+section "Step 11: Installing PAM development libraries"
+apt-get install -y --no-install-recommends \
+  libpam0g \
+  libpam0g-dev
+info "libpam0g and libpam0g-dev installed."
+
+# ── 12. bcrypt via npm (used by setup.sh to hash admin password) ──────────────
+section "Step 12: Installing bcrypt (npm global)"
 if npm list -g bcrypt --depth=0 &>/dev/null; then
   info "bcrypt npm package already installed globally."
 else
