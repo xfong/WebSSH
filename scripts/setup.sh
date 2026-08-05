@@ -305,9 +305,12 @@ cp -r "$PAM_HELPER_SRC" "$PAM_HELPER_DEST"
 echo "  PAM helper installed to $PAM_HELPER_DEST."
 
 # Create the socket directory with correct permissions.
+# 0755 (world-executable) is required when Docker userns-remap is active:
+# the container's remapped GID does not match the host 'webssh' group GID,
+# so the directory must be world-traversable for the container to reach the socket.
 mkdir -p "$PAM_SOCKET_DIR"
 chown root:webssh "$PAM_SOCKET_DIR"
-chmod 750 "$PAM_SOCKET_DIR"
+chmod 755 "$PAM_SOCKET_DIR"
 
 # Write the systemd service unit, substituting the PAM service name and GID.
 cat > "$PAM_SERVICE_FILE" <<SVCEOF

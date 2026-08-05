@@ -101,17 +101,21 @@ const server = net.createServer((socket) => {
 });
 
 server.listen(SOCKET_PATH, () => {
-  // Set socket permissions: owner=root (rw), group=webssh (rw), others=none.
-  fs.chmodSync(SOCKET_PATH, 0o660);
-
-  // Optionally change the socket's group ownership.
-  if (SOCKET_GID !== null) {
-    try {
-      fs.chownSync(SOCKET_PATH, 0, parseInt(SOCKET_GID, 10));
-    } catch (err) {
-      console.warn(`Could not set socket GID to ${SOCKET_GID}:`, err.message);
-    }
-  }
+  // Set socket permissions to 0666 (world read/write).
+  //
+  // When Docker userns-remap is active, the container's GIDs are remapped to
+  // a high subordinate range on the host (e.g. GID 996 inside the container
+  // becomes GID 166532 on the host). Group-based access control (0660 +
+  // group_add) therefore does not work across the userns boundary.
+  //
+  // 0666 is safe here because:
+  //   - The socket only exists on the host filesystem (not exposed to the network).
+  //   - The PAM helper validates every authentication request regardless of who
+  //     connects; it does not trust the caller.
+  //   - The socket directory (/run/webssh/) is 0755, so any local process can
+  //     reach the socket, but only processes that can authenticate via PAM
+  //     (i.e. know a valid username+password) will get a successful response.
+  fs.chmodSync(SOCKET_PATH, 0o666);
 
   console.log(`WebSSH PAM helper listening on ${SOCKET_PATH} (service: ${PAM_SERVICE})`);
 });
