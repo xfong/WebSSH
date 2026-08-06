@@ -3,6 +3,10 @@
 # Copy this file to webssh.conf (in the same directory) and edit the values
 # before running setup.sh. webssh.conf is gitignored; this example file is not.
 # Lines starting with # are comments and are ignored by setup.sh.
+#
+# This branch uses PAM authentication only. User credentials are verified
+# through the host machine's PAM stack (typically via SSSD), which handles
+# LDAP/AD integration, caching, and local account support automatically.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Server ────────────────────────────────────────────────────────────────────
@@ -18,51 +22,6 @@
 #   users, set it here (e.g. webssh.example.com) so the TLS certificate
 #   matches the address users type in their browser.
 SERVER_HOSTNAME=
-
-# ── LDAP ─────────────────────────────────────────────────────────────────────
-
-# LDAP_HOST
-#   Hostname(s) or IP address(es) of the LDAP server(s) used to authenticate
-#   users. Multiple servers may be specified as a comma-separated list; they
-#   are tried in order (ordered failover). If a server is unreachable or
-#   returns an error, the next server in the list is tried. If a server
-#   returns a definitive authentication failure (wrong credentials), no
-#   further servers are tried.
-#
-#   For each server, connections are attempted in this order:
-#     1. LDAPS       (port 636)  — TLS from the start
-#     2. STARTTLS    (port 389)  — plain connection upgraded to TLS
-#     3. Plain LDAP  (port 389)  — unencrypted, fallback of last resort
-#
-#   Single server example:  ldap.example.com
-#   Multi-server example:   ldap1.example.com,ldap2.example.com,ldap3.example.com
-LDAP_HOST=
-
-# LDAP_BASE_DN
-#   The base Distinguished Name (DN) of your LDAP directory tree.
-#   All user searches are performed within this subtree.
-#   Example: dc=example,dc=com
-LDAP_BASE_DN=
-
-# LDAP_USER_DN_TEMPLATE
-#   A template used to construct the full DN of a user for direct bind
-#   authentication. Replace the literal username portion with {username};
-#   the backend substitutes the actual username at login time.
-#   Leave blank to use the default: uid={username},ou=people,<LDAP_BASE_DN>
-#   Example: uid={username},ou=users,dc=example,dc=com
-#   Example: CN={username},OU=Accounts,DC=corp,DC=example,DC=com
-LDAP_USER_DN_TEMPLATE=
-
-# LDAP_CA_CERT_PATH
-#   Absolute path on the HOST filesystem to the CA certificate (PEM format)
-#   that signed the LDAP server's TLS certificate.
-#   Required when using LDAPS with a self-signed or internal CA certificate,
-#   so the backend can verify the LDAP server's identity.
-#   The file is copied into the backend container by setup.sh.
-#   Leave blank if LDAPS is not used or if the certificate is already trusted
-#   by the system's default CA bundle.
-#   Example: /usr/local/share/ca-certificates/ldap-ca.crt
-LDAP_CA_CERT_PATH=
 
 # ── PAM Authentication ───────────────────────────────────────────────────────
 
@@ -104,7 +63,7 @@ SSH_PORT=22
 # ADMIN_USERNAME
 #   Username for the local administrator account.
 #   This account is authenticated against a locally stored bcrypt hash
-#   (set during setup.sh) and is completely independent of LDAP.
+#   (set during setup.sh) and is completely independent of PAM.
 #   The admin uses the same login page as regular users; the system detects
 #   the admin username and routes them to the admin control panel.
 #   Default: admin

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# WebSSH Setup Script
+# WebSSH Setup Script (PAM-only authentication)
 # Run this on the host server to configure and launch the application.
 # Requirements: Docker, Docker Compose v2, OpenSSL, Node.js v22+, python3
 #
 # Configuration is loaded from webssh.conf in the repo root.
-# Copy webssh.conf, fill in your values, then run this script.
-# Any values left blank in webssh.conf will be prompted interactively.
+# Copy webssh.conf.example to webssh.conf, fill in your values, then run
+# this script. Any values left blank in webssh.conf will be prompted
+# interactively.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -45,7 +46,8 @@ if [ -f "$CONF_FILE" ]; then
     # Trim whitespace from key and value
     key="${key// /}"
     value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"    # Only export non-empty values
+    value="${value%"${value##*[![:space:]]}"}"
+    # Only export non-empty values
     if [ -n "$value" ]; then
       export "$key"="$value"
     fi
@@ -70,26 +72,6 @@ if [ -z "${SERVER_HOSTNAME:-}" ]; then
   SERVER_HOSTNAME="${SERVER_HOSTNAME:-$(hostname)}"
 else
   echo "  Server hostname:        $SERVER_HOSTNAME"
-fi
-
-if [ -z "${LDAP_HOST:-}" ]; then
-  read -rp "LDAP server host (e.g. ldap.example.com): " LDAP_HOST
-fi
-
-if [ -z "${LDAP_BASE_DN:-}" ]; then
-  read -rp "LDAP base DN (e.g. dc=example,dc=com): " LDAP_BASE_DN
-fi
-
-if [ -z "${LDAP_USER_DN_TEMPLATE:-}" ]; then
-  read -rp "LDAP user DN template [{username} as placeholder, default uid={username},ou=people,${LDAP_BASE_DN}]: " LDAP_USER_DN_TEMPLATE
-  LDAP_USER_DN_TEMPLATE="${LDAP_USER_DN_TEMPLATE:-uid={username},ou=people,${LDAP_BASE_DN}}"
-fi
-
-if [ -z "${LDAP_CA_CERT_PATH:-}" ]; then
-  read -rp "Path to LDAP CA certificate file (leave blank to skip): " LDAP_CA_SRC
-else
-  LDAP_CA_SRC="$LDAP_CA_CERT_PATH"
-  echo "  LDAP CA cert:           $LDAP_CA_SRC"
 fi
 
 if [ -z "${SSH_HOST:-}" ]; then
@@ -121,14 +103,14 @@ XPRA_PORT_END="${XPRA_PORT_END:-11000}"
 echo ""
 
 # ── 4. Admin password: reuse existing hash or generate a new one ──────────────
+SECRETS_DIR="$REPO_ROOT/docker/secrets"
 EXISTING_HASH=""
-if [ -f "$ENV_FILE" ]; then
-  # Extract the existing hash from .env, stripping any $$ escaping
-  EXISTING_HASH=$(grep '^ADMIN_PASSWORD_HASH=' "$ENV_FILE" | cut -d= -f2- | sed 's/\$\$/\$/g' || true)
+if [ -f "$SECRETS_DIR/admin_hash" ]; then
+  EXISTING_HASH=$(cat "$SECRETS_DIR/admin_hash")
 fi
 
 if [ -n "$EXISTING_HASH" ]; then
-  echo "An existing admin password hash was found in .env."
+  echo "An existing admin password hash was found."
   read -rp "Reset admin password? [y/N]: " RESET_PASS
   RESET_PASS="${RESET_PASS:-N}"
   if [[ "$RESET_PASS" =~ ^[Yy]$ ]]; then
@@ -171,10 +153,10 @@ JSEOF
   echo "  Admin password hash generated."
 fi
 
-# ── 5. Generate JWT secret (always regenerate on fresh setup) ─────────────────
+# ── 5. Generate JWT secret (reuse existing if present) ────────────────────────
 EXISTING_JWT=""
-if [ -f "$ENV_FILE" ]; then
-  EXISTING_JWT=$(grep '^JWT_SECRET=' "$ENV_FILE" | cut -d= -f2- | sed 's/\$\$/\$/g' || true)
+if [ -f "$SECRETS_DIR/jwt_secret" ]; then
+  EXISTING_JWT=$(cat "$SECRETS_DIR/jwt_secret")
 fi
 
 if [ -n "$EXISTING_JWT" ]; then
@@ -206,21 +188,11 @@ fi
 # the nginx container's remapped UID cannot read a 600 root-owned key file.
 chmod 644 "$SSL_DIR/server.key"
 
-# ── 7. Copy LDAP CA certificate if provided ───────────────────────────────────
-if [ -n "${LDAP_CA_SRC:-}" ] && [ -f "$LDAP_CA_SRC" ]; then
-  cp "$LDAP_CA_SRC" "$SSL_DIR/ldap-ca.crt"
-  echo "  LDAP CA certificate copied to $SSL_DIR/ldap-ca.crt"
-else
-  touch "$SSL_DIR/ldap-ca.crt"
-  echo "  WARNING: No LDAP CA certificate provided. LDAPS may fail certificate validation."
-fi
-
-# ── 8. Write secrets files and .env ──────────────────────────────────────────
+# ── 7. Write secrets files and .env ──────────────────────────────────────────
 # ADMIN_PASSWORD_HASH and JWT_SECRET are written as plain files under
 # docker/secrets/ and mounted into the container at /run/secrets/.
 # This avoids Docker Compose $$ interpolation corrupting bcrypt hashes
 # and JWT secrets that contain $ characters.
-SECRETS_DIR="$REPO_ROOT/docker/secrets"
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
@@ -235,12 +207,12 @@ echo "  Secrets written to docker/secrets/ (admin_hash, jwt_secret)."
 # Write .env for all other configuration (no sensitive values).
 # All variables must be exported so that Python's os.environ can access them.
 export SERVER_HOSTNAME ADMIN_USERNAME
-export LDAP_HOST LDAP_BASE_DN LDAP_USER_DN_TEMPLATE SSH_HOST SSH_PORT ENV_FILE
+export SSH_HOST SSH_PORT ENV_FILE
 export HTTPS_PORT HTTP_PORT XPRA_PORT_START XPRA_PORT_END
-# WEBSSH_GID is written to .env so docker-compose.yml can use it in group_add
-# to grant the app container access to the PAM helper Unix socket.
-# It is set after the webssh group is created in step 9; pre-populate with
-# an empty string here so Python does not raise a KeyError if step 9 has
+# WEBSSH_GID is used by docker-compose.yml group_add so the app container
+# can access the PAM helper Unix socket.
+# It is set after the webssh group is created in step 8; pre-populate with
+# an empty string here so Python does not raise a KeyError if step 8 has
 # not run yet (e.g. on a fresh run where the group will be created shortly).
 export WEBSSH_GID=""
 echo ""
@@ -255,10 +227,6 @@ lines = [
     "# dollar-sign interpolation issues. Do not add them back here.",
     "SERVER_HOSTNAME=" + os.environ["SERVER_HOSTNAME"],
     "ADMIN_USERNAME=" + os.environ["ADMIN_USERNAME"],
-    "LDAP_HOST=" + os.environ["LDAP_HOST"],
-    "LDAP_BASE_DN=" + os.environ["LDAP_BASE_DN"],
-    "LDAP_USER_DN_TEMPLATE=" + os.environ["LDAP_USER_DN_TEMPLATE"],
-    "LDAP_CA_CERT_PATH=/app/certs/ldap-ca.crt",
     "SSH_HOST=" + os.environ["SSH_HOST"],
     "SSH_PORT=" + os.environ["SSH_PORT"],
     "REDIS_HOST=redis",
@@ -278,7 +246,7 @@ with open(os.environ["ENV_FILE"], "w") as f:
 PYEOF
 echo "  .env written."
 
-# ── 9. Install and start the PAM authentication helper ───────────────────────
+# ── 8. Install and start the PAM authentication helper ───────────────────────
 echo ""
 echo "Setting up PAM authentication helper..."
 
@@ -353,7 +321,7 @@ systemctl enable webssh-pam-helper
 systemctl restart webssh-pam-helper
 echo "  webssh-pam-helper service enabled and started."
 
-# ── 10. Build frontend static assets ──────────────────────────────────────────
+# ── 9. Build frontend static assets ──────────────────────────────────────────
 echo ""
 echo "Building frontend..."
 cd "$REPO_ROOT/frontend"
