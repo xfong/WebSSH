@@ -1,14 +1,17 @@
 import bcrypt from 'bcrypt';
+import { getAdminHash } from '../utils/secrets';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME!;
-const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH!;
 
 /**
  * Authenticate the local administrator account.
- * Credentials are stored in environment variables (set by setup.sh).
+ * The password hash is read from /run/secrets/admin_hash (Docker secrets file)
+ * via the shared secrets utility, with a fallback to the ADMIN_PASSWORD_HASH
+ * environment variable for local development.
  */
 export async function authenticateAdmin(username: string, password: string): Promise<boolean> {
   if (username !== ADMIN_USERNAME) return false;
-  if (!ADMIN_PASSWORD_HASH || ADMIN_PASSWORD_HASH === 'CHANGE_ME') return false;
-  return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+  const hash = getAdminHash();
+  if (!hash || hash === 'CHANGE_ME') return false;
+  return bcrypt.compare(password, hash);
 }

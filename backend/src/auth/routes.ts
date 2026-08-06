@@ -3,8 +3,8 @@ import jwt from 'jsonwebtoken';
 import { authenticateViaPam } from './pam';
 import { authenticateUser as authenticateViaLdap } from './ldap';
 import { authenticateAdmin } from './admin';
+import { JWT_SECRET } from '../utils/secrets';
 
-const JWT_SECRET = process.env.JWT_SECRET!;
 const JWT_EXPIRES_IN = '12h';
 
 export function registerAuthRoutes(app: Express): void {

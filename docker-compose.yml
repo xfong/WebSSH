@@ -35,6 +35,11 @@ services:
       # The socket is created by webssh-pam-helper.service on the host.
       # If the socket does not exist, the backend falls back to direct LDAP.
       - /run/webssh/pam.sock:/run/webssh/pam.sock
+      # Secrets files: admin password hash and JWT secret are stored as plain
+      # files to avoid Docker Compose $$ interpolation issues with bcrypt hashes.
+      # setup.sh writes these files; the backend reads them at startup.
+      - ./docker/secrets/admin_hash:/run/secrets/admin_hash:ro
+      - ./docker/secrets/jwt_secret:/run/secrets/jwt_secret:ro
     depends_on:
       - redis
     networks:

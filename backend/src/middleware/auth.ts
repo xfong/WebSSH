@@ -1,7 +1,6 @@
 import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET!;
+import { JWT_SECRET } from '../utils/secrets';
 
 export interface AuthPayload {
   username: string;
