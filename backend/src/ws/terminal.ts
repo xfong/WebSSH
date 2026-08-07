@@ -1,8 +1,26 @@
+/**
+ * terminal.ts — WebSocket namespace for terminal session attachment.
+ *
+ * This handler no longer owns SSH connections. Instead it:
+ *   1. Verifies the nodeId and user ownership.
+ *   2. Calls attachSocket() to pipe the persistent SSH session to this socket.
+ *   3. On disconnect, calls detachSocket() — the SSH session stays alive.
+ *
+ * The SSH session must already exist (started by control.ts when the user
+ * clicked "+"). If the session is not yet running (e.g. the backend restarted),
+ * the client is informed and must re-create the terminal.
+ */
+
 import { Server as SocketIOServer, Namespace, Socket } from 'socket.io';
 import { getNode } from '../session/store';
-import { openSSHSession, resizeSSHSession, closeSSHSession } from '../ssh/manager';
+import {
+  hasSession,
+  attachSocket,
+  detachSocket,
+  registerSocketRef,
+  unregisterSocketRef,
+} from '../session/sshSessionManager';
 import { AuthPayload } from '../middleware/auth';
-import { redis } from '../session/store';
 
 export function registerTerminalNamespace(
   io: SocketIOServer,
@@ -21,6 +39,7 @@ export function registerTerminalNamespace(
       return;
     }
 
+    // Verify the node exists in the session store
     const node = await getNode(nodeId);
     if (!node) {
       socket.emit('error', { message: 'Session not found' });
@@ -35,10 +54,13 @@ export function registerTerminalNamespace(
       return;
     }
 
-    // Retrieve the temporarily stored password
-    const password = await redis.get(`session:password:${nodeId}`);
-    if (!password && auth.role !== 'admin') {
-      socket.emit('error', { message: 'Session credentials expired. Please create a new terminal.' });
+    // Check that the persistent SSH session is running
+    if (!hasSession(nodeId)) {
+      socket.emit('error', {
+        message:
+          'SSH session is not running. The server may have restarted. ' +
+          'Please close this terminal and create a new one.',
+      });
       socket.disconnect();
       return;
     }
@@ -46,49 +68,17 @@ export function registerTerminalNamespace(
     // Join the node room so force_close_tabs can reach this socket
     socket.join(`node:${nodeId}`);
 
-    // Open SSH session
-    let sshSession: Awaited<ReturnType<typeof openSSHSession>> | null = null;
+    // Register socket reference for broadcasting
+    registerSocketRef(socket);
 
-    try {
-      sshSession = await openSSHSession(node.username, password!, 80, 24);
-    } catch (err) {
-      socket.emit('error', { message: `SSH connection failed: ${(err as Error).message}` });
-      socket.disconnect();
-      return;
-    }
+    // Attach this socket to the persistent SSH session
+    // (replays buffer, registers input/resize handlers)
+    await attachSocket(nodeId, socket);
 
-    const { stream } = sshSession;
-
-    // Stream SSH output → browser
-    stream.on('data', (data: Buffer) => {
-      socket.emit('terminal_output', data.toString('utf8'));
-    });
-
-    stream.stderr?.on('data', (data: Buffer) => {
-      socket.emit('terminal_output', data.toString('utf8'));
-    });
-
-    stream.on('close', () => {
-      socket.emit('terminal_output', '\r\n[Session closed]\r\n');
-      socket.disconnect();
-    });
-
-    // Browser input → SSH
-    socket.on('terminal_input', (data: string) => {
-      stream.write(data);
-    });
-
-    // PTY resize
-    socket.on('terminal_resize', (data: { cols: number; rows: number }) => {
-      resizeSSHSession(stream, data.cols, data.rows);
-    });
-
-    // Cleanup on disconnect
+    // On disconnect: detach from the SSH session (SSH stays alive)
     socket.on('disconnect', () => {
-      if (sshSession) {
-        closeSSHSession(sshSession);
-        sshSession = null;
-      }
+      detachSocket(nodeId, socket.id);
+      unregisterSocketRef(socket.id);
     });
   });
 }
