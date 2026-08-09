@@ -20,7 +20,7 @@ export default function XpraPage() {
     const deviceId = sessionStorage.getItem('deviceId') || crypto.randomUUID();
 
     const socket = io('/ws/xpra', {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: { token, deviceId },
       query: { nodeId },
     });
@@ -47,7 +47,7 @@ export default function XpraPage() {
     if (confirm('Close this GUI window? All child windows will also be closed.')) {
       const deviceId = sessionStorage.getItem('deviceId') || '';
       const ctrlSocket = io('/ws/control', {
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
         auth: { token, deviceId },
       });
       ctrlSocket.emit('close_node', { nodeId });

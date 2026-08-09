@@ -146,7 +146,7 @@ export default function VirtualKeyboard({ onInput }: VirtualKeyboardProps) {
           Active: {[...heldModifiers].join(' + ')}
         </div>
       )}
-      <div ref={containerRef} />
+      <div ref={containerRef} className="simple-keyboard" />
     </div>
   );
 }

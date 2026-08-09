@@ -37,7 +37,7 @@ export default function TerminalPage() {
 
     const deviceId = sessionStorage.getItem('deviceId') || crypto.randomUUID();
     const socket = io('/ws/terminal', {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: { token, deviceId },
       query: { nodeId },
     });
@@ -77,7 +77,7 @@ export default function TerminalPage() {
       // Signal the control channel to close this node
       const deviceId = sessionStorage.getItem('deviceId') || '';
       const ctrlSocket = io('/ws/control', {
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
         auth: { token, deviceId },
       });
       ctrlSocket.emit('close_node', { nodeId });

@@ -38,7 +38,7 @@ export default function SessionTreePage() {
     sessionStorage.setItem('deviceId', deviceId);
 
     const socket = io('/ws/control', {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: { token, deviceId },
     });
     socketRef.current = socket;
