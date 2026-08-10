@@ -68,9 +68,11 @@ export default function XpraPage() {
     // ── Verify the Xpra session is reachable via the backend proxy ───────────
     // We use a lightweight Socket.IO connection to /ws/xpra just to confirm
     // the session is live. The actual GUI rendering is done by the iframe below.
+    // nodeId is passed in BOTH query and auth to ensure it arrives at the backend
+    // regardless of how Socket.IO serialises the handshake parameters.
     const xpraSocket = io('/ws/xpra', {
       transports: ['websocket', 'polling'],
-      auth: { token, deviceId },
+      auth: { token, deviceId, nodeId },
       query: { nodeId },
     });
 
