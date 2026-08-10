@@ -212,28 +212,31 @@ export function registerControlNamespace(
       // Create the node in the session store
       const node = await createNode(auth.username, 'terminal', null, name);
 
-      // Start the persistent SSH session immediately
-      // The password is used here and never stored anywhere except the in-memory cache
+      // Cache the password for Xpra SSH commands (in-memory only)
+      _passwordCache.set(auth.username, data.password);
+
+      // Start Xpra server for this user BEFORE opening the SSH PTY so we know
+      // the display number to set in the shell environment via DISPLAY=:N.
+      let xpraEnv: Record<string, string> | undefined;
       try {
-        await startSession(node.nodeId, auth.username, data.password);
+        const xpraSession = await startXpraSession(auth.username, data.password, node.nodeId);
+        xpraEnv = { DISPLAY: `:${xpraSession.display}` };
+        _startPolling(ns, auth.username, node.nodeId);
+      } catch (err) {
+        // Xpra failure is non-fatal — terminal still works without X11
+        console.warn(`[Xpra] Failed to start session for ${auth.username}: ${(err as Error).message}`);
+      }
+
+      // Start the persistent SSH session with DISPLAY set to the Xpra virtual display.
+      // The password is used here and never stored anywhere except the in-memory cache.
+      try {
+        await startSession(node.nodeId, auth.username, data.password, 80, 24, xpraEnv);
       } catch (err) {
         await deleteNode(node.nodeId);
         socket.emit('error', {
           message: `SSH connection failed: ${(err as Error).message}`,
         });
         return;
-      }
-
-      // Cache the password for Xpra SSH commands (in-memory only)
-      _passwordCache.set(auth.username, data.password);
-
-      // Start Xpra server for this user (if not already running)
-      try {
-        await startXpraSession(auth.username, data.password, node.nodeId);
-        _startPolling(ns, auth.username, node.nodeId);
-      } catch (err) {
-        // Xpra failure is non-fatal — terminal still works
-        console.warn(`[Xpra] Failed to start session for ${auth.username}: ${(err as Error).message}`);
       }
 
       await broadcastTree(ns, auth.username);

@@ -53,12 +53,13 @@ export async function startSession(
   password: string,
   cols: number = 80,
   rows: number = 24,
+  env?: Record<string, string>,
 ): Promise<void> {
   if (sessions.has(nodeId)) {
     throw new Error(`Session ${nodeId} already exists`);
   }
 
-  const sshSession = await openSSHSession(username, password, cols, rows);
+  const sshSession = await openSSHSession(username, password, cols, rows, env);
 
   const managed: ManagedSession = {
     nodeId,
@@ -70,6 +71,15 @@ export async function startSession(
 
   sessions.set(nodeId, managed);
   console.log(`[SSH] Session started: ${nodeId} (user: ${username})`);
+
+  // If a DISPLAY value was provided, send it as the first shell command.
+  // This is the most reliable way to set DISPLAY in the user's shell regardless
+  // of whether sshd is configured with AcceptEnv DISPLAY.
+  // The command is sent before any socket attaches, so it runs silently in the
+  // background buffer and is replayed to the user when they first connect.
+  if (env?.DISPLAY) {
+    sshSession.stream.write(`export DISPLAY=${env.DISPLAY}\n`);
+  }
 
   // Stream SSH output → Redis buffer + all attached sockets
   sshSession.stream.on('data', (data: Buffer) => {

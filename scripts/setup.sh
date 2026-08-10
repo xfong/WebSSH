@@ -353,7 +353,35 @@ systemctl enable webssh-pam-helper
 systemctl restart webssh-pam-helper
 echo "  webssh-pam-helper service enabled and started."
 
-# ── 10. Build frontend static assets ──────────────────────────────────────────
+
+# ── 10. Configure sshd to accept DISPLAY environment variable ────────────────
+echo ""
+echo "Configuring sshd to accept DISPLAY environment variable..."
+SSHD_CONFIG="/etc/ssh/sshd_config"
+if [ -f "$SSHD_CONFIG" ]; then
+  if grep -qE '^AcceptEnv.*\bDISPLAY\b' "$SSHD_CONFIG"; then
+    echo "  sshd already configured to accept DISPLAY — skipping."
+  else
+    if grep -qE '^AcceptEnv' "$SSHD_CONFIG"; then
+      sed -i 's/^AcceptEnv\(.*\)/AcceptEnv\1 DISPLAY/' "$SSHD_CONFIG"
+      echo "  Added DISPLAY to existing AcceptEnv line in $SSHD_CONFIG."
+    else
+      echo '' >> "$SSHD_CONFIG"
+      echo '# Allow WebSSH to set DISPLAY for Xpra X11 forwarding' >> "$SSHD_CONFIG"
+      echo 'AcceptEnv DISPLAY' >> "$SSHD_CONFIG"
+      echo "  Added AcceptEnv DISPLAY to $SSHD_CONFIG."
+    fi
+    if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null; then
+      systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+      echo "  sshd reloaded."
+    fi
+  fi
+else
+  echo "  WARNING: $SSHD_CONFIG not found. Skipping sshd configuration."
+  echo "  The DISPLAY variable will be set via shell command instead."
+fi
+
+# ── 11. Build frontend static assets ──────────────────────────────────────────
 echo ""
 echo "Building frontend..."
 cd "$REPO_ROOT/frontend"
@@ -361,7 +389,7 @@ npm install --silent
 npm run build
 echo "  Frontend built. Output in frontend/dist/"
 
-# ── 10. Build and start Docker containers ─────────────────────────────────────
+# ── 12. Build and start Docker containers ─────────────────────────────────────
 echo ""
 echo "Building and starting Docker containers..."
 cd "$REPO_ROOT"
