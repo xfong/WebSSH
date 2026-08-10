@@ -69,6 +69,7 @@ export async function startSession(
   };
 
   sessions.set(nodeId, managed);
+  console.log(`[SSH] Session started: ${nodeId} (user: ${username})`);
 
   // Stream SSH output → Redis buffer + all attached sockets
   sshSession.stream.on('data', (data: Buffer) => {
@@ -85,6 +86,7 @@ export async function startSession(
 
   // When the SSH stream closes (e.g. user typed 'exit'), clean up
   sshSession.stream.on('close', () => {
+    console.log(`[SSH] Stream closed naturally: ${nodeId}`);
     const msg = '\r\n[Session closed]\r\n';
     _bufferChunk(nodeId, msg);
     _broadcastToSockets(managed, msg);
@@ -116,6 +118,8 @@ export async function attachSocket(nodeId: string, socket: Socket): Promise<void
     socket.disconnect();
     return;
   }
+
+  console.log(`[SSH] Socket attached: ${socket.id} → session ${nodeId}`);
 
   // Replay buffered output so the user sees recent history
   const buffer = await redis.lrange(bufferKey(nodeId), 0, -1);
@@ -156,7 +160,10 @@ export function detachSocket(nodeId: string, socketId: string): void {
   const managed = sessions.get(nodeId);
   if (!managed) return;
   const cleanup = managed.socketCleanups.get(socketId);
-  if (cleanup) cleanup();
+  if (cleanup) {
+    cleanup();
+    console.log(`[SSH] Socket detached: ${socketId} from session ${nodeId}`);
+  }
 }
 
 /**
@@ -182,6 +189,7 @@ export async function terminateSession(nodeId: string, force: boolean = false): 
 
   sessions.delete(nodeId);
   await _clearBuffer(nodeId);
+  console.log(`[SSH] Session terminated: ${nodeId} (force=${force})`);
 }
 
 /**
