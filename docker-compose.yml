@@ -69,3 +69,11 @@ volumes:
 networks:
   webssh_net:
     driver: bridge
+    ipam:
+      config:
+        # Pin the subnet so the host gateway is always 172.18.0.1.
+        # This allows nginx to proxy Xpra ports on the host using a fixed IP.
+        # If 172.18.0.0/16 conflicts with an existing network on your host,
+        # change both this subnet and XPRA_HOST_IP in webssh.conf.
+        - subnet: "172.18.0.0/16"
+          gateway: "172.18.0.1"
