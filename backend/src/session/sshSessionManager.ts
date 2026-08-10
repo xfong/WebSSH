@@ -78,7 +78,12 @@ export async function startSession(
   // The command is sent before any socket attaches, so it runs silently in the
   // background buffer and is replayed to the user when they first connect.
   if (env?.DISPLAY) {
-    sshSession.stream.write(`export DISPLAY=${env.DISPLAY}\n`);
+    // Set DISPLAY and XAUTHORITY so X11 apps can find the Xpra display and
+    // its MIT-MAGIC-COOKIE. XAUTHORITY defaults to ~/.Xauthority which is
+    // where Xpra stores the cookie when it starts.
+    sshSession.stream.write(
+      `export DISPLAY=${env.DISPLAY}; export XAUTHORITY="$HOME/.Xauthority"\n`,
+    );
   }
 
   // Stream SSH output → Redis buffer + all attached sockets
