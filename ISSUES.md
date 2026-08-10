@@ -1,120 +1,103 @@
-# WebSSH — Known Issues
+# WebSSH — Issues Log
 
-This file documents issues identified during code review and live testing. Issues are ranked by severity. Resolved issues are marked and retained for historical reference.
+All issues listed below have been **resolved**. This file is retained as a record of the problems encountered during development and their fixes.
 
 ---
 
 ## Critical
 
-### Issue 1 — SSH sessions are not persistent
+### Issue 1 — SSH Sessions Not Persistent ✅ RESOLVED
+**Area:** Backend / `backend/src/ws/terminal.ts`, `backend/src/session/sshSessionManager.ts`
 
-**Area:** Backend / `backend/src/ws/terminal.ts`
-**Status:** Open
+Every time a user opened a terminal tab, a new SSH shell was opened and torn down on disconnect. Sessions did not survive browser closure.
 
-Every time a user opens a terminal tab, `terminal.ts` opens a brand-new SSH shell connection. When the browser tab is closed or disconnected, the `disconnect` handler immediately calls `closeSSHSession`, tearing down the SSH connection. This means the backend SSH session does not survive browser closure, which directly violates the core specification requirement that backend sessions persist indefinitely until the user explicitly closes them.
-
-**Required fix:** SSH sessions must be started once (when the terminal node is created) and kept alive in a persistent process manager or background map, independent of any browser WebSocket connection. Reconnecting to a terminal tab must re-attach to the existing running SSH PTY rather than opening a new one.
+**Fix:** Introduced `sshSessionManager.ts` — a singleton session registry that owns all live SSH connections keyed by `nodeId`, independent of any WebSocket. `terminal.ts` now only attaches/detaches socket streams; the SSH session remains alive on disconnect. PTY output is buffered in Redis (capped at 500 chunks) and replayed to reconnecting clients.
 
 ---
 
-### Issue 2 — Password TTL breaks reconnection after 5 minutes
+### Issue 2 — Password TTL Breaks Reconnection ✅ RESOLVED
+**Area:** Backend / `backend/src/session/sshSessionManager.ts`
 
-**Area:** Backend / `backend/src/ws/control.ts` and `backend/src/ws/terminal.ts`
-**Status:** Open
+Passwords were stored in Redis with a 5-minute TTL, making reconnection impossible after expiry.
 
-When a new terminal is created, the user's SSH password is stored in Redis under `session:password:{nodeId}` with a hard-coded 5-minute TTL (`setex(..., 300, ...)`). When the terminal WebSocket connects, it retrieves this password to open the SSH session. If the user closes the browser and attempts to reconnect to the same terminal after 5 minutes, the password has expired and the connection is rejected with the error *"Session credentials expired. Please create a new terminal."*
-
-This breaks the indefinite session persistence requirement. The password is only needed at the moment the SSH connection is first established. Once the SSH connection is open and held persistently (see Issue 1), the password no longer needs to be stored at all.
-
-**Required fix:** Resolve Issue 1 first (persistent SSH sessions). Once SSH sessions are held alive independently of browser connections, the password only needs to be present at initial session creation time and does not need to be stored in Redis at all for reconnection purposes.
+**Fix:** Passwords are never stored in Redis. They are used once at session creation to open the SSH connection, then held only in an in-memory cache (`_passwordCache`) for Xpra SSH commands. The cache is cleared when the user's last session is terminated.
 
 ---
 
-### Issue 3 — Xpra daemon is never launched; X11 support is a stub
+### Issue 3 — Xpra/X11 GUI Streaming Not Wired ✅ RESOLVED
+**Area:** Backend / `backend/src/xpra/manager.ts`, `ws/xpra.ts`, `ws/control.ts`; Frontend / `XpraPage.tsx`; Infrastructure / `nginx.conf`, `docker-compose.yml`
 
-**Area:** Backend / `backend/src/xpra/manager.ts` and `docker/xpra/entrypoint.sh`
-**Status:** Open
+The Xpra container was a placeholder (`tail -f /dev/null`). No Xpra sessions were started, no windows were detected, and the frontend showed a broken iframe.
 
-The `startXpraSession` function in `xpra/manager.ts` only records session metadata in Redis. It does not actually spawn an Xpra daemon process. The Xpra container's `entrypoint.sh` simply runs `tail -f /dev/null` and waits indefinitely, providing no active Xpra service. As a result, no GUI window creation path is wired end-to-end and X11 application streaming is entirely non-functional.
+**Fix:** Complete Xpra implementation:
+- Xpra runs on the SSH host (installed by `prereq.sh`), not in a Docker container.
+- `xpra/manager.ts` starts/stops Xpra via SSH, polls for new/closed windows using `xpra info`, and diffs against Redis-stored window state.
+- `ws/control.ts` starts Xpra before the SSH PTY, sets `DISPLAY` and `XAUTHORITY` in the shell, and runs a 3-second window poller per user.
+- nginx proxies the Xpra HTML5 server at `/xpra-proxy/PORT/` using the pinned gateway IP `172.18.0.1`.
+- `XpraPage.tsx` fetches the proxy URL from `GET /api/v1/xpra-url/:nodeId` and loads it in an iframe.
 
-**Required fix:** `startXpraSession` must SSH into the host (or execute within the Xpra container) to run `xpra start` with the appropriate display number, bind address, and port. The `entrypoint.sh` should start a base Xpra service or at minimum provide the environment required for per-user Xpra sessions to be spawned on demand. The `XpraPage.tsx` frontend currently renders an `<iframe>` pointing at `/xpra-client/?nodeId=...`, which also requires an Nginx route to the Xpra HTML5 client — this route is missing from `nginx.conf`.
+---
+
+### Issue 4 — Admin Terminate Has No Effect ✅ RESOLVED
+**Area:** Backend / `backend/src/ws/control.ts`
+
+The `admin_terminate` handler never called any session termination logic.
+
+**Fix:** `admin_terminate` now calls `terminateSession()` or `terminateAllUserSessions()` from `sshSessionManager.ts`, and also stops Xpra and clears the password cache for the affected user.
 
 ---
 
 ## High
 
-### Issue 4 — Admin graceful-terminate has no effect; `sshSessions` map is never populated
-
-**Area:** Backend / `backend/src/ws/control.ts`
-**Status:** Open
-
-The `control.ts` file declares an in-memory `sshSessions` map intended to hold live SSH session references for graceful termination. However, this map is never populated anywhere in the codebase. When an admin triggers a graceful terminate, `sshSessions.get(nodeId)` always returns `undefined`, so `closeSSHSession` is never called. The node is deleted from Redis and the tab is closed, but the underlying SSH process (if any) is not signalled. Force kill has the same problem.
-
-**Required fix:** When an SSH session is opened (whether in `terminal.ts` or a future persistent session manager), its reference must be stored in a shared, accessible map (or Redis-backed structure if multi-process) keyed by `nodeId`, so that `control.ts` can retrieve and close it during admin termination.
-
----
-
-### Issue 5 — "+" button is rendered twice for regular users
-
+### Issue 5 — "+" Button Rendered Twice ✅ RESOLVED
 **Area:** Frontend / `frontend/src/components/tree/TreeView.tsx`
-**Status:** Open
 
-The `+` button for creating a new terminal is rendered by two separate conditional blocks that both evaluate to true for a regular user viewing their own username node. This results in two `+` buttons appearing side by side in the tree for every username row.
+Two separate conditional blocks both evaluated to true for a regular user, rendering two `+` buttons.
 
-**Required fix:** Remove the first redundant conditional block and keep only the second one, or consolidate the two conditions into a single render path.
+**Fix:** Removed the redundant block; a single clean condition remains.
 
 ---
 
 ## Medium
 
-### Issue 6 — Inline rename starts with an empty string instead of the current name
-
+### Issue 6 — Inline Rename Starts with Empty Field ✅ RESOLVED
 **Area:** Frontend / `frontend/src/components/tree/TreeView.tsx`
-**Status:** Open
 
-The action menu's Rename option calls `startRename(actionMenu.nodeId, '')`, passing an empty string as the initial value for the rename input field. The user must type the full new name from scratch, with no indication of what the current name is.
+`startRename()` was called with an empty string, forcing the user to retype the full name.
 
-**Required fix:** Pass the current node name as the second argument: `startRename(actionMenu.nodeId, actionMenu.name)`. This requires adding `name` to the `ActionMenu` interface.
-
----
-
-### Issue 7 — Logout does not invalidate the JWT on the server side
-
-**Area:** Frontend / `frontend/src/pages/SessionTreePage.tsx`
-**Status:** Open
-
-The sign-out button clears the JWT and user data from `sessionStorage` on the client side but does not call `POST /api/v1/auth/logout` to notify the backend. The JWT remains technically valid until it expires naturally, which could allow a captured token to be reused.
-
-**Required fix:** The logout handler should call `POST /api/v1/auth/logout` (with the current token in the `Authorization` header) before clearing client-side state, so the backend can add the token to a denylist or otherwise invalidate it.
+**Fix:** The node's current name is stored in `ActionMenu` state and passed as the initial value to `startRename()`.
 
 ---
 
-### Issue 8 — Admin notification in `TerminalPage` uses `alert()` instead of the modal component
+### Issue 7 — Logout Does Not Invalidate JWT on Server ✅ RESOLVED
+**Area:** Frontend / `frontend/src/context/AuthContext.tsx`
 
-**Area:** Frontend / `frontend/src/pages/TerminalPage.tsx`
-**Status:** Open
+`logout()` cleared `sessionStorage` but never called `/api/v1/auth/logout`.
 
-When the backend sends an `admin_notification` event to a terminal tab, `TerminalPage.tsx` handles it with a plain browser `alert()` call. The `AdminNotification` modal component was built specifically for this purpose and provides a styled, acknowledgeable notification consistent with the rest of the UI.
+**Fix:** `logout()` now sends a best-effort `POST /api/v1/auth/logout` with the current token before clearing local state.
 
-**Required fix:** Replace the `alert()` call in `TerminalPage.tsx` with the `AdminNotification` component, matching the pattern already used in `SessionTreePage.tsx`. The same fix should be verified for `XpraPage.tsx`.
+---
+
+### Issue 8 — Admin Notification Uses `alert()` ✅ RESOLVED
+**Area:** Frontend / `frontend/src/pages/TerminalPage.tsx`, `XpraPage.tsx`
+
+Both pages used `alert(d.message)` for admin notifications, bypassing the `AdminNotification` modal.
+
+**Fix:** Both pages now set `adminMsg` state on `admin_notification`, rendering the `AdminNotification` modal overlay. The user must click "Acknowledge & Return to Login" before being redirected.
 
 ---
 
 ## Low
 
-### Issue 9 — Backend Dockerfile does not compile TypeScript; relies on pre-built `dist/`
-
+### Issue 9 — Backend Dockerfile Relies on Pre-built `dist/` ✅ RESOLVED
 **Area:** Infrastructure / `backend/Dockerfile`
-**Status:** ✅ Resolved
 
-Converted to a two-stage Docker build. Stage 1 installs all dependencies and compiles TypeScript inside Docker. Stage 2 copies only the compiled output and production dependencies into the final image.
+Converted to a two-stage Docker build. Stage 1 compiles TypeScript inside Docker; Stage 2 copies only the compiled output and production deps.
 
 ---
 
-### Issue 10 — `docker-compose.yml` uses deprecated `version` key
-
+### Issue 10 — Deprecated `version` Key in Compose File ✅ RESOLVED
 **Area:** Infrastructure / `docker-compose.yml`
-**Status:** ✅ Resolved
 
 Removed the deprecated `version: "3.9"` line.
 
@@ -122,98 +105,54 @@ Removed the deprecated `version: "3.9"` line.
 
 ## Issues Found During Live Testing
 
-### Issue 11 — Alpine-based images fail with TLS errors under `userns-remap`
+### Issue 11 — Node.js Version Too Old for `@vitejs/plugin-react` v5 ✅ RESOLVED
+`@vitejs/plugin-react` v5 requires Node ≥ 20.19.0 or ≥ 22.12.0. `prereq.sh` now enforces Node.js v22+; `frontend/package.json` has an `engines` field.
 
-**Area:** Infrastructure / Docker images
-**Status:** ✅ Resolved
+### Issue 12 — Alpine TLS Failure with `userns-remap` ✅ RESOLVED
+Alpine's `libretls` fails with `TLS: unspecified error` under `userns-remap`. All Alpine images replaced with Debian Bookworm equivalents.
 
-Alpine Linux's `libretls` implementation fails with a generic TLS error when Docker's `userns-remap` is active, preventing `apk` from fetching packages during build. All Alpine-based images (`node:22-alpine`, `nginx:alpine`, `redis:alpine`) were replaced with Debian Bookworm equivalents (`node:22-bookworm-slim`, `nginx:bookworm`, `redis:bookworm`).
+### Issue 13 — Xpra Package Not in Ubuntu Default Repos ✅ RESOLVED
+`prereq.sh` now adds the official Xpra.org repository before installing `xpra`, `xpra-x11`, `xpra-html5`, and X11 utilities.
 
----
+### Issue 14 — `package-lock.json` Missing for Backend ✅ RESOLVED
+Generated and committed `backend/package-lock.json`.
 
-### Issue 12 — Xpra Dockerfile missing official Xpra apt repository
+### Issue 15 — Admin Password Hash Corrupted by Shell Heredoc / Docker Compose Interpolation ✅ RESOLVED
+`ADMIN_PASSWORD_HASH` and `JWT_SECRET` are now stored as plain files in `docker/secrets/` and mounted into the container, completely bypassing Docker Compose `$` interpolation.
 
-**Area:** Infrastructure / `docker/xpra/Dockerfile`
-**Status:** ✅ Resolved
+### Issue 16 — PAM Socket Inaccessible from Container under `userns-remap` ✅ RESOLVED
+PAM socket now created with `0666` permissions; socket directory with `0755`.
 
-`xpra` and `xpra-html5` are not in Ubuntu's default apt repositories. The Dockerfile was updated to add the official Xpra repository for Ubuntu 24.04 (Noble) before installing packages.
+### Issue 17 — nginx `nginx -s reload` Does Not Pick Up Bind-Mounted Config Changes ✅ RESOLVED
+A full `docker compose restart nginx` is required to pick up `nginx.conf` changes under `userns-remap`. Documented.
 
----
+### Issue 18 — Socket.IO WebSocket Upgrade Fails ✅ RESOLVED
+Two root causes: server configured with `websocket`-only transport (blocking the required polling handshake), and missing `/socket.io/` nginx location block. Both fixed.
 
-### Issue 13 — Backend `package-lock.json` missing; `npm ci` fails during Docker build
+### Issue 19 — Socket.IO Auth Middleware Not Applied to Child Namespaces ✅ RESOLVED
+In Socket.IO v4, `io.use()` does not propagate to child namespaces. Auth middleware is now registered on each namespace individually.
 
-**Area:** Infrastructure / `backend/package-lock.json`
-**Status:** ✅ Resolved
+### Issue 20 — `docker compose restart` Does Not Apply Updated Env Vars ✅ RESOLVED
+Use `docker compose up -d --force-recreate <service>` to apply `.env` changes. Documented.
 
-Generated and committed `backend/package-lock.json`. The multi-stage Dockerfile uses `npm ci` which requires a lockfile.
+### Issue 21 — `DISPLAY` Not Set in SSH Shell ✅ RESOLVED
+`control.ts` now starts Xpra before the SSH PTY. `sshSessionManager.ts` sends `export DISPLAY=:N; export XAUTHORITY="$HOME/.Xauthority"` as the first shell command. `setup.sh` adds `AcceptEnv DISPLAY` to `sshd_config`.
 
----
+### Issue 22 — Xpra Window Detection Regex Wrong ✅ RESOLVED
+`xpra info` outputs `windows.N.title=` (plural). The regex was matching `window.N.title=` (singular). Fixed in `xpra/manager.ts`.
 
-### Issue 14 — `setup.sh` bcrypt hashing fails due to global npm install not being resolvable
+### Issue 23 — `nodeId` Not Arriving at Backend WebSocket Handler ✅ RESOLVED
+Socket.IO query parameters are not forwarded in the WebSocket upgrade handshake. `nodeId` is now passed in the `auth` object (reliably delivered in the Socket.IO handshake).
 
-**Area:** Infrastructure / `scripts/setup.sh`
-**Status:** ✅ Resolved
+### Issue 24 — Xpra Proxy 502 Due to Wrong Host IP ✅ RESOLVED
+`host.docker.internal` resolved to `172.17.0.1` (docker0) but WebSSH containers are on `172.18.0.0/16`. `webssh_net` subnet is now pinned to `172.18.0.0/16`; nginx Xpra proxy uses `172.18.0.1` directly.
 
-Replaced `npm install -g bcrypt` with a local temporary directory install. The password is passed via environment variable to avoid all shell quoting issues.
+### Issue 25 — Stale `webssh_xpra` Container Blocking Network Recreation ✅ RESOLVED
+The old `xpra` Docker service left a stale container attached to the network. Remove with `docker rm -f webssh_xpra` before recreating the network.
 
----
-
-### Issue 15 — `setup.sh` heredoc expands `$` signs, corrupting bcrypt hash and JWT secret in `.env`
-
-**Area:** Infrastructure / `scripts/setup.sh` and `docker-compose.yml`
-**Status:** ✅ Resolved (permanent fix applied)
-
-Shell heredocs expand `$` signs, corrupting bcrypt hashes and JWT secrets written to `.env`. Docker Compose v2.24+ also interpolates `$` signs from `env_file` values, requiring `$$` escaping. This was a recurring source of admin login failures.
-
-**Permanent fix:** `ADMIN_PASSWORD_HASH` and `JWT_SECRET` are no longer stored in `.env`. They are written as plain files to `docker/secrets/admin_hash` and `docker/secrets/jwt_secret` by `setup.sh`, and mounted read-only into the container at `/run/secrets/`. The backend reads them from the filesystem via `backend/src/utils/secrets.ts`, completely bypassing Docker Compose interpolation.
-
----
-
-### Issue 16 — PAM socket inaccessible from container under `userns-remap`
-
-**Area:** Infrastructure / `pam-helper/index.js` and `scripts/setup.sh`
-**Status:** ✅ Resolved
-
-With `userns-remap` active, the container's GID 996 maps to host GID 166532, not 996. The PAM socket (`/run/webssh/pam.sock`) was created with `0660` permissions owned `root:webssh`, which the remapped container process could not access. Fixed by creating the socket with `0666` permissions and the socket directory with `0755`.
+### Issue 26 — `xpra-x11` Package Missing ✅ RESOLVED
+`xpra start` in seamless mode requires `xpra-x11`. Added to the `prereq.sh` installation list.
 
 ---
 
-### Issue 17 — nginx `nginx -s reload` does not pick up bind-mounted config changes
-
-**Area:** Infrastructure / `docker/nginx/nginx.conf`
-**Status:** ✅ Resolved (workaround documented)
-
-`nginx -s reload` inside the container does not re-read bind-mounted files that were updated after the container started. A full container restart (`docker compose restart nginx`) is required to pick up changes to `nginx.conf`. This is a known Docker bind-mount behaviour with `userns-remap`.
-
----
-
-### Issue 18 — Socket.IO WebSocket upgrade fails; falls back to HTTP polling
-
-**Area:** Backend / `backend/src/index.ts` and `docker/nginx/nginx.conf`
-**Status:** ✅ Resolved
-
-Two root causes:
-1. The Socket.IO server was configured with `transports: ['websocket']` only. Socket.IO requires a polling handshake to exchange session IDs before upgrading to WebSocket. Fixed by allowing `['websocket', 'polling']`.
-2. nginx had no location block for `/socket.io/`, so WebSocket upgrade headers were not forwarded. Fixed by adding a dedicated `/socket.io/` location block with `proxy_http_version 1.1` and `Upgrade`/`Connection` headers.
-
----
-
-### Issue 19 — Socket.IO auth middleware not applied to child namespaces
-
-**Area:** Backend / `backend/src/index.ts`, `ws/control.ts`, `ws/terminal.ts`, `ws/xpra.ts`
-**Status:** ✅ Resolved
-
-In Socket.IO v4, `io.use()` middleware registered on the root `io` object does **not** propagate to child namespaces (`/ws/control`, `/ws/terminal`, `/ws/xpra`). As a result, `socket.data.auth` was `undefined` when namespace connection handlers ran, causing `TypeError: Cannot read properties of undefined (reading 'role')`. Fixed by registering `authMiddleware` on each namespace individually via `ns.use(middleware)`.
-
----
-
-### Issue 20 — `docker compose restart` does not recreate containers with updated env vars
-
-**Area:** Infrastructure / deployment procedure
-**Status:** ✅ Resolved (documented)
-
-`docker compose restart` restarts containers without recreating them, so updated environment variables from `.env` are not picked up. Use `docker compose up -d --force-recreate <service>` to apply `.env` changes to a running container.
-
----
-
-*Last updated: 2026-08-06*
+*Last updated: 2026-08-10*
