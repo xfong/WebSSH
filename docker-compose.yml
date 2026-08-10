@@ -57,24 +57,12 @@ services:
     networks:
       - webssh_net
 
-  xpra:
-    build:
-      context: ./docker/xpra
-      dockerfile: Dockerfile
-    container_name: webssh_xpra
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - xpra_data:/var/run/xpra
-    networks:
-      - webssh_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  # NOTE: The xpra service has been removed. Xpra now runs directly on the
+  # SSH host (installed by prereq.sh). The backend starts per-user Xpra
+  # daemons via SSH and proxies the HTML5 WebSocket stream to the browser.
 
 volumes:
   redis_data:
-  xpra_data:
 
 networks:
   webssh_net:

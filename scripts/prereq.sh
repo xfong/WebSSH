@@ -166,8 +166,30 @@ apt-get install -y --no-install-recommends \
   libpam0g-dev
 info "libpam0g and libpam0g-dev installed."
 
-# ── 12. bcrypt via npm (used by setup.sh to hash admin password) ──────────────
-section "Step 12: Installing bcrypt (npm global)"
+# ── 12. Xpra (X11 session server — runs on the SSH host) ─────────────────────
+section "Step 12: Installing Xpra"
+
+if command -v xpra &>/dev/null; then
+  info "Xpra already installed: $(xpra --version 2>&1 | head -1) — skipping."
+else
+  info "Adding the official Xpra repository for Ubuntu 24.04 (Noble)..."
+  curl -fsSL https://xpra.org/xpra.asc -o /usr/share/keyrings/xpra.asc
+  curl -fsSL \
+    https://raw.githubusercontent.com/Xpra-org/xpra/master/packaging/repos/noble/xpra.sources \
+    -o /etc/apt/sources.list.d/xpra.sources
+  apt-get update -y
+  apt-get install -y --no-install-recommends \
+    xpra \
+    xpra-html5 \
+    xvfb \
+    x11-utils \
+    x11-xserver-utils \
+    dbus-x11
+  info "Xpra installed: $(xpra --version 2>&1 | head -1)"
+fi
+
+# ── 13. bcrypt via npm (used by setup.sh to hash admin password) ──────────────
+section "Step 13: Installing bcrypt (npm global)"
 if npm list -g bcrypt --depth=0 &>/dev/null; then
   info "bcrypt npm package already installed globally."
 else
@@ -178,7 +200,7 @@ fi
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "========================================"
-echo "  All prerequisites installed."
+  echo "  All prerequisites installed (including Xpra on this SSH host)."
 echo ""
 echo "  Next steps:"
 echo "  1. Log out and back in (or run 'newgrp docker') to activate"

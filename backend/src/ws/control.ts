@@ -3,13 +3,17 @@
  *
  * Responsibilities:
  *   - Serve the session hierarchy tree to users and admin in real-time.
- *   - Handle new_terminal: create the node AND start the persistent SSH session.
- *   - Handle close_node: terminate the SSH session and remove the node.
+ *   - Handle new_terminal: create the node, start the persistent SSH session,
+ *     and start the Xpra server for the user.
+ *   - Handle close_node: terminate the SSH session, stop Xpra, remove the node.
  *   - Handle admin_terminate: graceful or force-kill sessions per node or per user.
  *   - Handle disconnect (tree window close): signal all device tabs to close.
+ *   - Poll Xpra for new/closed GUI windows and update the session tree in real-time.
  *
  * The password is used only at session creation time and is never stored
  * in Redis. Once the SSH session is open, the password is no longer needed.
+ * The Xpra manager also needs the password to run SSH commands; it is kept
+ * in a per-user in-memory map (cleared on session termination).
  */
 
 import { Server as SocketIOServer, Namespace, Socket } from 'socket.io';
@@ -21,6 +25,7 @@ import {
   getAllActiveUsers,
   getUserNodes,
   getNode,
+  getChildNodes,
 } from '../session/store';
 import {
   startSession,
@@ -28,7 +33,22 @@ import {
   terminateAllUserSessions,
   hasSession,
 } from '../session/sshSessionManager';
+import {
+  startXpraSession,
+  stopXpraSession,
+  getXpraSession,
+  diffXpraWindows,
+  XpraWindow,
+} from '../xpra/manager';
 import { AuthPayload } from '../middleware/auth';
+
+// ── Per-user password cache (in-memory only, never persisted) ─────────────────
+// Needed so the Xpra window poller can run SSH commands without re-prompting.
+const _passwordCache = new Map<string, string>();
+
+// ── Xpra window poller ────────────────────────────────────────────────────────
+// Maps username → xpraWindow nodeId (keyed by wid)
+const _xpraWindowNodes = new Map<string, Map<number, string>>(); // username → (wid → nodeId)
 
 // ── Tree broadcast helpers ────────────────────────────────────────────────────
 
@@ -47,11 +67,100 @@ async function broadcastFullAdminTree(ns: Namespace): Promise<void> {
   ns.to('admin').emit('admin_tree_update', { tree: fullTree });
 }
 
+// ── Xpra window polling ───────────────────────────────────────────────────────
+
+/**
+ * Polls Xpra for new/closed windows for a user and updates the session tree.
+ * Called on a 3-second interval while the user has an active Xpra session.
+ */
+async function _pollXpraWindows(
+  ns: Namespace,
+  username: string,
+  terminalNodeId: string,
+): Promise<void> {
+  const password = _passwordCache.get(username);
+  if (!password) return;
+
+  const xpraSession = getXpraSession(username);
+  if (!xpraSession) return;
+
+  try {
+    const { added, removed } = await diffXpraWindows(username, password);
+
+    let changed = false;
+
+    // Create nodes for newly appeared windows
+    for (const win of added) {
+      const name = _uniqueWindowName(username, win.title);
+      const node = await createNode(
+        username, 'xpra', terminalNodeId, name, xpraSession.port,
+      );
+      if (!_xpraWindowNodes.has(username)) {
+        _xpraWindowNodes.set(username, new Map());
+      }
+      _xpraWindowNodes.get(username)!.set(win.wid, node.nodeId);
+      console.log(`[Xpra] New window for ${username}: "${win.title}" → node ${node.nodeId}`);
+      changed = true;
+    }
+
+    // Remove nodes for windows that have closed
+    for (const win of removed) {
+      const widMap = _xpraWindowNodes.get(username);
+      if (!widMap) continue;
+      const nodeId = widMap.get(win.wid);
+      if (nodeId) {
+        await deleteNode(nodeId);
+        widMap.delete(win.wid);
+        console.log(`[Xpra] Window closed for ${username}: wid ${win.wid} → node ${nodeId}`);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await broadcastTree(ns, username);
+    }
+  } catch (err) {
+    // Polling errors are non-fatal — log and continue
+    console.warn(`[Xpra] Poll error for ${username}: ${(err as Error).message}`);
+  }
+}
+
+/** Generates a unique display name for an Xpra window, appending (N) if needed. */
+function _uniqueWindowName(username: string, title: string): string {
+  const widMap = _xpraWindowNodes.get(username);
+  if (!widMap) return title;
+  // Count existing windows with the same base title
+  const count = [...widMap.values()].length; // approximate — good enough for naming
+  return count === 0 ? title : `${title} (${count + 1})`;
+}
+
+// ── Per-user Xpra poll intervals ──────────────────────────────────────────────
+const _pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+function _startPolling(ns: Namespace, username: string, terminalNodeId: string): void {
+  if (_pollIntervals.has(username)) return; // already polling
+  const interval = setInterval(
+    () => _pollXpraWindows(ns, username, terminalNodeId),
+    3000,
+  );
+  _pollIntervals.set(username, interval);
+  console.log(`[Xpra] Started window polling for ${username}`);
+}
+
+function _stopPolling(username: string): void {
+  const interval = _pollIntervals.get(username);
+  if (interval) {
+    clearInterval(interval);
+    _pollIntervals.delete(username);
+    console.log(`[Xpra] Stopped window polling for ${username}`);
+  }
+}
+
 // ── Namespace registration ────────────────────────────────────────────────────
 
 export function registerControlNamespace(
   io: SocketIOServer,
-  middleware: (socket: Socket, next: (err?: Error) => void) => void
+  middleware: (socket: Socket, next: (err?: Error) => void) => void,
 ): void {
   const ns: Namespace = io.of('/ws/control');
   const terminalNs: Namespace = io.of('/ws/terminal');
@@ -104,16 +213,27 @@ export function registerControlNamespace(
       const node = await createNode(auth.username, 'terminal', null, name);
 
       // Start the persistent SSH session immediately
-      // The password is used here and never stored anywhere
+      // The password is used here and never stored anywhere except the in-memory cache
       try {
         await startSession(node.nodeId, auth.username, data.password);
       } catch (err) {
-        // If SSH fails, remove the node and report the error
         await deleteNode(node.nodeId);
         socket.emit('error', {
           message: `SSH connection failed: ${(err as Error).message}`,
         });
         return;
+      }
+
+      // Cache the password for Xpra SSH commands (in-memory only)
+      _passwordCache.set(auth.username, data.password);
+
+      // Start Xpra server for this user (if not already running)
+      try {
+        await startXpraSession(auth.username, data.password, node.nodeId);
+        _startPolling(ns, auth.username, node.nodeId);
+      } catch (err) {
+        // Xpra failure is non-fatal — terminal still works
+        console.warn(`[Xpra] Failed to start session for ${auth.username}: ${(err as Error).message}`);
       }
 
       await broadcastTree(ns, auth.username);
@@ -136,12 +256,26 @@ export function registerControlNamespace(
       if (!node) return;
       if (auth.role !== 'admin' && node.username !== auth.username) return;
 
-      // Terminate the SSH session (and all children recursively via deleteNode)
       await _terminateNodeAndChildren(data.nodeId);
       await deleteNode(data.nodeId);
-      await broadcastTree(ns, node.username);
 
-      // Signal all tabs viewing this node to close
+      // If this was a terminal node, stop Xpra and polling
+      if (node.type === 'terminal' && node.parentId === null) {
+        const password = _passwordCache.get(node.username);
+        if (password) {
+          _stopPolling(node.username);
+          await stopXpraSession(node.username, password).catch(() => {});
+          _xpraWindowNodes.delete(node.username);
+          // Only clear password cache if user has no more terminal sessions
+          const remaining = await getUserNodes(node.username);
+          const hasMoreTerminals = remaining.some((n) => n.type === 'terminal');
+          if (!hasMoreTerminals) {
+            _passwordCache.delete(node.username);
+          }
+        }
+      }
+
+      await broadcastTree(ns, node.username);
       ns.to(`node:${data.nodeId}`).emit('force_close_tabs', { nodeId: data.nodeId });
     });
 
@@ -156,7 +290,6 @@ export function registerControlNamespace(
       const targetUsername = data.userId;
 
       if (data.nodeId) {
-        // Terminate a specific node (and its children)
         const node = await getNode(data.nodeId);
         if (!node) return;
 
@@ -166,6 +299,14 @@ export function registerControlNamespace(
         ns.to(`node:${data.nodeId}`).emit('force_close_tabs', { nodeId: data.nodeId });
       } else {
         // Terminate ALL sessions for the user
+        _stopPolling(targetUsername);
+        const password = _passwordCache.get(targetUsername);
+        if (password) {
+          await stopXpraSession(targetUsername, password).catch(() => {});
+        }
+        _passwordCache.delete(targetUsername);
+        _xpraWindowNodes.delete(targetUsername);
+
         await terminateAllUserSessions(targetUsername, data.force);
         const nodes = await getUserNodes(targetUsername);
         for (const n of nodes) {
@@ -186,8 +327,6 @@ export function registerControlNamespace(
       if (auth.role === 'admin') return;
       if (!deviceId) return;
       // Broadcast force_close_tabs to this device across ALL namespaces.
-      // Socket.IO rooms are namespace-scoped, so we must emit on each
-      // namespace individually to reach terminal and xpra tabs.
       const payload = { deviceId };
       ns.to(`device:${deviceId}`).emit('force_close_tabs', payload);
       terminalNs.to(`device:${deviceId}`).emit('force_close_tabs', payload);
@@ -203,17 +342,14 @@ async function _terminateNodeAndChildren(
   nodeId: string,
   force: boolean = false,
 ): Promise<void> {
-  // Terminate children first (depth-first)
   const node = await getNode(nodeId);
   if (!node) return;
 
-  const { getChildNodes } = await import('../session/store');
   const children = await getChildNodes(nodeId);
   for (const child of children) {
     await _terminateNodeAndChildren(child.nodeId, force);
   }
 
-  // Terminate this node's SSH session if it is running
   if (hasSession(nodeId)) {
     await terminateSession(nodeId, force);
   }
