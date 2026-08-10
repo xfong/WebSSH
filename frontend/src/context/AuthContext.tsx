@@ -44,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    // Invalidate the JWT on the server before clearing local state
+    const currentToken = sessionStorage.getItem('token');
+    if (currentToken) {
+      fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentToken}` },
+      }).catch(() => { /* best-effort; proceed with local logout regardless */ });
+    }
     sessionStorage.clear();
     setAuth({ token: null, username: null, role: null });
   }

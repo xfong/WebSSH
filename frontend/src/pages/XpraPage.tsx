@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import VirtualKeyboard from '../components/keyboard/VirtualKeyboard';
 import MouseButtons from '../components/keyboard/MouseButtons';
 import ThemeToggle from '../components/common/ThemeToggle';
+import AdminNotification from '../components/common/AdminNotification';
 
 export default function XpraPage() {
   const { nodeId } = useParams<{ nodeId: string }>();
@@ -14,6 +15,7 @@ export default function XpraPage() {
   const xpraContainerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'connecting' | 'ready' | 'error'>('connecting');
   const [errorMsg, setErrorMsg] = useState('');
+  const [adminMsg, setAdminMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !nodeId) return;
@@ -31,9 +33,7 @@ export default function XpraPage() {
     socket.on('xpra_closed', () => { setStatus('error'); setErrorMsg('Xpra session closed.'); });
     socket.on('force_close_tabs', () => { socket.disconnect(); window.close(); });
     socket.on('admin_notification', (d: { message: string }) => {
-      alert(d.message);
-      logout();
-      navigate('/login');
+      setAdminMsg(d.message);
     });
 
     return () => { socket.disconnect(); };
@@ -64,6 +64,13 @@ export default function XpraPage() {
           <button className="danger" onClick={handleClose}>Close</button>
         </div>
       </div>
+
+      {adminMsg && (
+        <AdminNotification
+          message={adminMsg}
+          onAcknowledge={() => { setAdminMsg(null); logout(); navigate('/login'); }}
+        />
+      )}
 
       {/* Top panel: Xpra HTML5 canvas */}
       <div style={styles.xpraPanel} ref={xpraContainerRef}>

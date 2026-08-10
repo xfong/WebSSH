@@ -17,6 +17,7 @@ interface ActionMenu {
   nodeId: string;
   username: string;
   type: 'terminal' | 'xpra';
+  name: string;
   x: number;
   y: number;
 }
@@ -55,7 +56,7 @@ export default function TreeView({
     e.preventDefault();
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setActionMenu({ nodeId: node.nodeId, username, type: node.type, x: rect.right, y: rect.bottom });
+    setActionMenu({ nodeId: node.nodeId, username, type: node.type, name: node.name, x: rect.right, y: rect.bottom });
   }
 
   function renderNode(node: TreeNode, username: string, depth: number): React.ReactNode {
@@ -139,16 +140,7 @@ export default function TreeView({
             <span style={styles.icon}>👤</span>
             <span style={{ fontWeight: 500 }}>{username}</span>
 
-            {/* + button next to username (only for the current user or admin) */}
-            {(role === 'admin' || username === currentUsername) && role !== 'admin' && (
-              <button
-                style={styles.addBtn}
-                onClick={onNewTerminal}
-                title="New terminal"
-              >
-                +
-              </button>
-            )}
+            {/* + button next to username — only for the current non-admin user */}
             {role !== 'admin' && username === currentUsername && (
               <button style={styles.addBtn} onClick={onNewTerminal} title="New terminal">+</button>
             )}
@@ -174,7 +166,7 @@ export default function TreeView({
           <button style={styles.popoverItem} onClick={() => { onOpen(actionMenu.nodeId, actionMenu.type); setActionMenu(null); }}>
             {role === 'admin' ? 'Observe / Interact' : 'Open'}
           </button>
-          <button style={styles.popoverItem} onClick={() => { startRename(actionMenu.nodeId, ''); }}>
+          <button style={styles.popoverItem} onClick={() => { startRename(actionMenu.nodeId, actionMenu.name ?? ''); }}>
             Rename
           </button>
           {role === 'admin' ? (

@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import VirtualKeyboard from '../components/keyboard/VirtualKeyboard';
 import MouseButtons from '../components/keyboard/MouseButtons';
 import ThemeToggle from '../components/common/ThemeToggle';
+import AdminNotification from '../components/common/AdminNotification';
 
 export default function TerminalPage() {
   const { nodeId } = useParams<{ nodeId: string }>();
@@ -18,6 +19,7 @@ export default function TerminalPage() {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
+  const [adminMsg, setAdminMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !nodeId || !termRef.current) return;
@@ -48,9 +50,7 @@ export default function TerminalPage() {
     socket.on('error', (e: { message: string }) => setError(e.message));
     socket.on('force_close_tabs', () => { socket.disconnect(); window.close(); });
     socket.on('admin_notification', (d: { message: string }) => {
-      alert(d.message);
-      logout();
-      navigate('/login');
+      setAdminMsg(d.message);
     });
 
     term.onData((data) => socket.emit('terminal_input', data));
@@ -97,6 +97,12 @@ export default function TerminalPage() {
         </div>
       </div>
 
+      {adminMsg && (
+        <AdminNotification
+          message={adminMsg}
+          onAcknowledge={() => { setAdminMsg(null); logout(); navigate('/login'); }}
+        />
+      )}
       {error && <div style={styles.errorBanner}>{error}</div>}
 
       {/* Top panel: terminal */}
