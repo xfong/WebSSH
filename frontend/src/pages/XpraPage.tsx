@@ -1,10 +1,11 @@
 /**
  * XpraPage.tsx
  *
- * Renders a GUI window tab. The Xpra HTML5 client is embedded in an iframe
- * that connects directly to the Xpra HTML5 server via the backend WebSocket
- * proxy (/ws/xpra). The control socket monitors for admin notifications and
- * force-close signals.
+ * Renders a GUI window tab. The Xpra HTML5 client is loaded in an iframe
+ * that connects directly to the Xpra HTML5 server via the nginx proxy at
+ * /xpra-proxy/PORT/. The backend provides the proxy URL via a REST call.
+ *
+ * A control socket monitors for admin notifications and force-close signals.
  *
  * Layout (two-panel, scrollable):
  *   Top panel  — Xpra HTML5 iframe (full GUI rendering)
@@ -26,27 +27,40 @@ export default function XpraPage() {
   const navigate = useNavigate();
   const controlSocketRef = useRef<Socket | null>(null);
   const xpraContainerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<'connecting' | 'ready' | 'error'>('connecting');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   const [nodeName, setNodeName] = useState<string>('GUI Window');
+  const [xpraProxyUrl, setXpraProxyUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !nodeId) return;
     const deviceId = sessionStorage.getItem('deviceId') || crypto.randomUUID();
     sessionStorage.setItem('deviceId', deviceId);
 
-    // ── Control socket: listens for admin_notification and force_close_tabs ──
+    // ── Fetch the Xpra proxy URL from the backend ─────────────────────────────
+    fetch(`/api/v1/xpra-url/${nodeId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<{ url: string; port: number }>;
+      })
+      .then(({ url }) => {
+        setXpraProxyUrl(url);
+        setStatus('ready');
+      })
+      .catch((err) => {
+        setStatus('error');
+        setErrorMsg(`Failed to get Xpra URL: ${err.message}`);
+      });
+
+    // ── Control socket: admin_notification and force_close_tabs ──────────────
     const ctrl = io('/ws/control', {
       transports: ['websocket', 'polling'],
       auth: { token, deviceId },
     });
     controlSocketRef.current = ctrl;
-
-    ctrl.on('connect', () => {
-      // Join the node room so we receive targeted close signals
-      ctrl.emit('join_node', { nodeId });
-    });
 
     ctrl.on('admin_notification', (d: { message: string }) => {
       setAdminMsg(d.message);
@@ -59,44 +73,14 @@ export default function XpraPage() {
       }
     });
 
-    // ── Fetch node name from the tree for the toolbar title ──────────────────
+    // Fetch node name from tree updates
     ctrl.on('tree_update', (d: { tree: unknown[] }) => {
-      const name = _findNodeName(d.tree, nodeId);
+      const name = _findNodeName(d.tree as TreeNodeLike[], nodeId);
       if (name) setNodeName(name);
-    });
-
-    // ── Verify the Xpra session is reachable via the backend proxy ───────────
-    // We use a lightweight Socket.IO connection to /ws/xpra just to confirm
-    // the session is live. The actual GUI rendering is done by the iframe below.
-    // nodeId is passed in BOTH query and auth to ensure it arrives at the backend
-    // regardless of how Socket.IO serialises the handshake parameters.
-    const xpraSocket = io('/ws/xpra', {
-      transports: ['websocket', 'polling'],
-      auth: { token, deviceId, nodeId },
-      query: { nodeId },
-    });
-
-    xpraSocket.on('xpra_ready', () => {
-      setStatus('ready');
-      // Disconnect the probe socket — the iframe handles the real connection
-      xpraSocket.disconnect();
-    });
-
-    xpraSocket.on('error', (e: { message: string }) => {
-      setStatus('error');
-      setErrorMsg(e.message);
-      xpraSocket.disconnect();
-    });
-
-    xpraSocket.on('xpra_closed', () => {
-      setStatus('error');
-      setErrorMsg('Xpra session closed.');
-      xpraSocket.disconnect();
     });
 
     return () => {
       ctrl.disconnect();
-      xpraSocket.disconnect();
     };
   }, [token, nodeId]);
 
@@ -108,22 +92,12 @@ export default function XpraPage() {
   }
 
   function sendToXpra(data: string) {
-    // Virtual keyboard input is forwarded to the iframe via postMessage
+    // Forward virtual keyboard input to the Xpra iframe via postMessage
     const iframe = xpraContainerRef.current?.querySelector('iframe');
     if (iframe?.contentWindow) {
       iframe.contentWindow.postMessage({ type: 'xpra_key_input', data }, '*');
     }
   }
-
-  /**
-   * Build the Xpra HTML5 client URL.
-   * The Xpra HTML5 server is proxied through the backend at /ws/xpra/.
-   * We pass the JWT token as a query parameter so the backend can authenticate
-   * the iframe's WebSocket connection.
-   */
-  const xpraClientUrl = nodeId && token
-    ? `/xpra-html5/?nodeId=${encodeURIComponent(nodeId)}&token=${encodeURIComponent(token)}`
-    : null;
 
   return (
     <div style={styles.page}>
@@ -144,19 +118,19 @@ export default function XpraPage() {
         />
       )}
 
-      {/* Top panel: Xpra HTML5 client */}
+      {/* Top panel: Xpra HTML5 client via nginx proxy */}
       <div style={styles.xpraPanel} ref={xpraContainerRef}>
-        {status === 'connecting' && (
-          <div style={styles.overlay}>Connecting to Xpra session…</div>
+        {status === 'loading' && (
+          <div style={styles.overlay}>Loading Xpra session…</div>
         )}
         {status === 'error' && (
           <div style={{ ...styles.overlay, color: 'var(--color-danger)' }}>
             {errorMsg}
           </div>
         )}
-        {status === 'ready' && xpraClientUrl && (
+        {status === 'ready' && xpraProxyUrl && (
           <iframe
-            src={xpraClientUrl}
+            src={xpraProxyUrl}
             style={{ width: '100%', height: '100%', border: 'none' }}
             title="Xpra GUI"
             allow="clipboard-read; clipboard-write"
@@ -181,9 +155,8 @@ interface TreeNodeLike {
   children?: TreeNodeLike[];
 }
 
-function _findNodeName(tree: unknown[], targetId: string): string | null {
-  for (const item of tree) {
-    const node = item as TreeNodeLike;
+function _findNodeName(tree: TreeNodeLike[], targetId: string): string | null {
+  for (const node of tree) {
     if (node.nodeId === targetId) return node.name;
     if (node.children) {
       const found = _findNodeName(node.children, targetId);
