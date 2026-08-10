@@ -159,12 +159,12 @@ export async function listXpraWindows(
   try {
     const output = await _sshExec(
       username, password,
-      `xpra info :${session.display} 2>/dev/null | grep -E "^window\\.[0-9]+\\.title=" || true`,
+      `xpra info :${session.display} 2>/dev/null | grep -E "^windows\\.[0-9]+\\.title=" || true`,
     );
-    // Parse lines like: window.3.title=Firefox
+    // Parse lines like: windows.4194314.title=xclock
     const windows: XpraWindow[] = [];
     for (const line of output.split('\n')) {
-      const m = line.match(/^window\.(\d+)\.title=(.+)$/);
+      const m = line.match(/^windows\.(\d+)\.title=(.+)$/);
       if (m) {
         windows.push({ wid: parseInt(m[1], 10), title: m[2].trim() });
       }
