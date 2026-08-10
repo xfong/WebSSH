@@ -68,6 +68,12 @@ export function registerTerminalNamespace(
     // Join the node room so force_close_tabs can reach this socket
     socket.join(`node:${nodeId}`);
 
+    // Join the device room so tree-window-close force_close_tabs reaches this tab
+    const deviceId = socket.handshake.auth?.deviceId as string | undefined;
+    if (deviceId) {
+      socket.join(`device:${deviceId}`);
+    }
+
     // Register socket reference for broadcasting
     registerSocketRef(socket);
 

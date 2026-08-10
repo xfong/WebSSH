@@ -34,6 +34,8 @@ const io = new SocketIOServer(httpServer, {
 // Register authMiddleware on each namespace individually.
 // In Socket.IO v4, io.use() middleware does NOT propagate to child namespaces;
 // each namespace must register its own middleware for socket.data to be populated.
+// The control namespace needs the full io server so it can broadcast
+// force_close_tabs across all namespaces when the tree window closes.
 registerControlNamespace(io, authMiddleware);
 registerTerminalNamespace(io, authMiddleware);
 registerXpraNamespace(io, authMiddleware);

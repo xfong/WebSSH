@@ -54,6 +54,8 @@ export function registerControlNamespace(
   middleware: (socket: Socket, next: (err?: Error) => void) => void
 ): void {
   const ns: Namespace = io.of('/ws/control');
+  const terminalNs: Namespace = io.of('/ws/terminal');
+  const xpraNs: Namespace = io.of('/ws/xpra');
   ns.use(middleware);
 
   ns.on('connection', async (socket: Socket) => {
@@ -182,10 +184,14 @@ export function registerControlNamespace(
     // ── disconnect: tree window closed ──────────────────────────────────────
     socket.on('disconnect', async () => {
       if (auth.role === 'admin') return;
-      // Signal all session tabs on this device to close
-      if (deviceId) {
-        ns.to(`device:${deviceId}`).emit('force_close_tabs', { deviceId });
-      }
+      if (!deviceId) return;
+      // Broadcast force_close_tabs to this device across ALL namespaces.
+      // Socket.IO rooms are namespace-scoped, so we must emit on each
+      // namespace individually to reach terminal and xpra tabs.
+      const payload = { deviceId };
+      ns.to(`device:${deviceId}`).emit('force_close_tabs', payload);
+      terminalNs.to(`device:${deviceId}`).emit('force_close_tabs', payload);
+      xpraNs.to(`device:${deviceId}`).emit('force_close_tabs', payload);
       // SSH sessions remain alive — they are NOT terminated on tree close
     });
   });
