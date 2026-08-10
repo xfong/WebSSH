@@ -28,7 +28,11 @@ export function registerXpraNamespace(
 
   ns.on('connection', async (socket: Socket) => {
     const auth = socket.data.auth as AuthPayload;
-    const nodeId = socket.handshake.query.nodeId as string;
+    // nodeId may arrive in query (Socket.IO query option) or auth (Socket.IO auth option)
+    const nodeId = (socket.handshake.query.nodeId ||
+                    socket.handshake.auth?.nodeId) as string | undefined;
+
+    console.log(`[Xpra] Connection attempt: nodeId=${nodeId}, query=${JSON.stringify(socket.handshake.query)}, auth keys=${Object.keys(socket.handshake.auth || {})}`);
 
     if (!nodeId) {
       socket.emit('error', { message: 'nodeId is required' });
