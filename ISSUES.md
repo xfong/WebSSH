@@ -153,6 +153,26 @@ The old `xpra` Docker service left a stale container attached to the network. Re
 ### Issue 26 — `xpra-x11` Package Missing ✅ RESOLVED
 `xpra start` in seamless mode requires `xpra-x11`. Added to the `prereq.sh` installation list.
 
+### Issue 27 — `prereq.sh` Does Not Install `xpra-x11` (Fresh Install) ✅ RESOLVED
+**Area:** Infrastructure / `scripts/prereq.sh`
+
+On a fresh install the `apt-get install` block for Xpra (Step 12) was missing `xpra-x11`. Without it, `xpra start` in seamless mode fails with:
+
+```
+you must install `xpra-x11` to use 'seamless'
+```
+
+**Fix:** Added `xpra-x11` to the `apt-get install` list in Step 12 of `prereq.sh`, immediately after `xpra`.
+
+### Issue 28 — Login Hangs with "Network Error" When `docker/secrets/` Files Are Missing ✅ RESOLVED
+**Area:** Infrastructure / `scripts/setup.sh`; Backend / `backend/src/index.ts`
+
+On a fresh install, if `setup.sh` did not write `docker/secrets/jwt_secret` (e.g. due to a partial run or the file being empty), the backend starts successfully but `JWT_SECRET` is an empty string. Every call to `jwt.sign()` during login throws `Error: secretOrPrivateKey must have a value`. The error is not caught at the HTTP layer, so the request hangs until nginx times out with a 504, which the frontend reports as "Network Error".
+
+**Fix (two parts):**
+1. `backend/src/index.ts` now validates `JWT_SECRET` and `admin_hash` at startup and calls `process.exit(1)` with a clear `FATAL:` message if either is empty. The container will exit immediately rather than silently accepting connections that always fail.
+2. `scripts/setup.sh` now verifies that both `docker/secrets/admin_hash` and `docker/secrets/jwt_secret` are non-empty immediately after writing them, and aborts with a clear error if either is empty.
+
 ---
 
-*Last updated: 2026-08-10*
+*Last updated: 2026-08-11*

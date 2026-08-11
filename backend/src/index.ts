@@ -7,6 +7,29 @@ import { registerControlNamespace } from './ws/control';
 import { registerTerminalNamespace } from './ws/terminal';
 import { registerXpraNamespace } from './ws/xpra';
 import { authMiddleware } from './middleware/auth';
+import { JWT_SECRET, getAdminHash } from './utils/secrets';
+
+// ── Startup validation ────────────────────────────────────────────────────────
+// Fail fast with a clear error if required secrets are missing.
+// Without JWT_SECRET every login attempt throws and hangs until nginx times out.
+if (!JWT_SECRET) {
+  console.error(
+    'FATAL: JWT_SECRET is empty. ' +
+    'Ensure docker/secrets/jwt_secret was written by setup.sh and is mounted ' +
+    'at /run/secrets/jwt_secret inside the container. ' +
+    'Re-run setup.sh to regenerate secrets.'
+  );
+  process.exit(1);
+}
+if (!getAdminHash()) {
+  console.error(
+    'FATAL: admin_hash is empty. ' +
+    'Ensure docker/secrets/admin_hash was written by setup.sh and is mounted ' +
+    'at /run/secrets/admin_hash inside the container. ' +
+    'Re-run setup.sh to regenerate secrets.'
+  );
+  process.exit(1);
+}
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 

@@ -180,6 +180,7 @@ else
   apt-get update -y
   apt-get install -y --no-install-recommends \
     xpra \
+    xpra-x11 \
     xpra-html5 \
     xvfb \
     x11-utils \
