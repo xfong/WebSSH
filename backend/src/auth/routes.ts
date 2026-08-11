@@ -7,6 +7,20 @@ import { JWT_SECRET } from '../utils/secrets';
 
 const JWT_EXPIRES_IN = '12h';
 
+/**
+ * Returns true if at least one LDAP server is configured.
+ * Evaluated lazily so that changes to the environment variable are picked up
+ * without restarting the process (though in practice the container must be
+ * restarted to pick up .env changes).
+ */
+function ldapConfigured(): boolean {
+  return (process.env.LDAP_HOST || '')
+    .split(',')
+    .map(h => h.trim().replace(/^ldaps?:\/\//i, ''))
+    .filter(h => h.length > 0)
+    .length > 0;
+}
+
 export function registerAuthRoutes(app: Express): void {
   /**
    * POST /api/v1/auth/login
@@ -16,7 +30,8 @@ export function registerAuthRoutes(app: Express): void {
    * Authentication order:
    *   1. Admin check (local bcrypt hash — always checked first, no PAM/LDAP)
    *   2. PAM helper (host PAM stack via Unix socket → SSSD → LDAP/local accounts)
-   *   3. Direct LDAP (fallback if PAM helper is unavailable)
+   *   3. Direct LDAP fallback — ONLY if PAM is unavailable AND LDAP_HOST is set.
+   *      If PAM is unavailable and LDAP_HOST is empty, return 503 immediately.
    */
   app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
     const { username, password } = req.body as { username?: string; password?: string };
@@ -55,12 +70,28 @@ export function registerAuthRoutes(app: Express): void {
     }
 
     // PAM helper is unavailable (not running, socket missing, timeout, etc.).
-    // Log a warning and fall back to direct LDAP.
+    // Fall back to direct LDAP only if LDAP servers are configured.
+    if (!ldapConfigured()) {
+      // No LDAP fallback available — surface a clear error rather than silently
+      // returning 401 (which would imply wrong credentials rather than a config issue).
+      console.error(
+        `PAM helper unavailable (${pamResult.error}) and LDAP_HOST is not configured. ` +
+        `Cannot authenticate user "${username}". ` +
+        `Ensure the webssh-pam-helper service is running on the host: ` +
+        `systemctl status webssh-pam-helper`,
+      );
+      return res.status(503).json({
+        error:
+          'Authentication service unavailable. ' +
+          'The PAM helper is not running and no LDAP fallback is configured. ' +
+          'Please contact the system administrator.',
+      });
+    }
+
+    // ── Step 3: Direct LDAP fallback ──────────────────────────────────────────
     console.warn(
       `PAM helper unavailable (${pamResult.error}). Falling back to direct LDAP for user "${username}".`,
     );
-
-    // ── Step 3: Direct LDAP fallback ──────────────────────────────────────────
     const ldapOk = await authenticateViaLdap(username, password);
     if (ldapOk) {
       const token = jwt.sign({ username, role: 'user' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });

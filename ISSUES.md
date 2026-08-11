@@ -173,6 +173,19 @@ On a fresh install, if `setup.sh` did not write `docker/secrets/jwt_secret` (e.g
 1. `backend/src/index.ts` now validates `JWT_SECRET` and `admin_hash` at startup and calls `process.exit(1)` with a clear `FATAL:` message if either is empty. The container will exit immediately rather than silently accepting connections that always fail.
 2. `scripts/setup.sh` now verifies that both `docker/secrets/admin_hash` and `docker/secrets/jwt_secret` are non-empty immediately after writing them, and aborts with a clear error if either is empty.
 
+### Issue 29 — PAM Unavailable Causes Silent LDAP Attempt Even When LDAP Is Not Configured ✅ RESOLVED
+**Area:** Backend / `backend/src/auth/routes.ts`
+
+When the PAM helper is unavailable (socket missing, EACCES, timeout), `routes.ts` always fell through to the LDAP fallback regardless of whether `LDAP_HOST` was configured. With no LDAP servers set, `ldap.ts` logged `LDAP_HOST is not configured` and returned `false`, resulting in a silent `401 Invalid credentials`. The user had no indication that the real problem was the PAM helper not running.
+
+Additionally, even with `LDAP_HOST` empty the code still called `authenticateViaLdap()`, which created ldapjs client objects and attempted connections before returning.
+
+**Fix:** Added a `ldapConfigured()` guard in `routes.ts`. When PAM is unavailable:
+- If `LDAP_HOST` is empty: return `503 Service Unavailable` with a message explaining that the PAM helper is not running and no LDAP fallback is configured, and log a `console.error` pointing to `systemctl status webssh-pam-helper`.
+- If `LDAP_HOST` is set: proceed with the LDAP fallback as before (existing behaviour).
+
+This makes the PAM-only configuration work correctly and gives operators a clear, actionable error message.
+
 ---
 
 *Last updated: 2026-08-11*
