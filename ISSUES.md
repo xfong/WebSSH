@@ -186,6 +186,15 @@ Additionally, even with `LDAP_HOST` empty the code still called `authenticateVia
 
 This makes the PAM-only configuration work correctly and gives operators a clear, actionable error message.
 
+### Issue 30 — Bind-Mounted Secret Files Are Unreadable with Docker `userns-remap` ✅ RESOLVED
+**Area:** Infrastructure / `scripts/setup.sh`
+
+On a host with Docker `userns-remap` enabled, `setup.sh` wrote `docker/secrets/admin_hash` and `docker/secrets/jwt_secret` as host-owned `root:root` files with mode `0600`. The container's root identity maps to the configured remap account's subordinate UID/GID range (for example `dockremap:165536:65536`), not host UID 0. Consequently, the bind-mounted files were unreadable in the `app` container, even when both files contained correct non-empty values.
+
+The backend correctly failed fast with `FATAL: JWT_SECRET is empty`, but PM2 continuously restarted the process and nginx intermittently returned `502 Bad Gateway` for the login API.
+
+**Fix:** `setup.sh` now detects Docker's configured `userns-remap` identity from `/etc/docker/daemon.json` and resolves its first subordinate UID/GID from `/etc/subuid` and `/etc/subgid`. It retains mode `0600`, but changes the secret file owner to that mapped identity before the container starts. Without `userns-remap`, files remain host-owned `root:root` with mode `0600`. The script aborts with a clear error if remapping is configured but its subordinate ranges cannot be resolved.
+
 ---
 
-*Last updated: 2026-08-11*
+*Last updated: 2026-08-13*

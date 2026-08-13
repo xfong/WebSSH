@@ -220,15 +220,85 @@ fi
 # docker/secrets/ and mounted into the container at /run/secrets/.
 # This avoids Docker Compose $$ interpolation corrupting bcrypt hashes
 # and JWT secrets that contain $ characters.
+#
+# With Docker userns-remap enabled, container root maps to the first subordinate
+# UID/GID assigned to the configured remap user (for example, dockremap maps to
+# 165536 on a typical Ubuntu host). A host root-owned 0600 bind-mounted file is
+# therefore unreadable inside the container. The helper below preserves 0600
+# permissions while chowning the files to that mapped root identity.
 SECRETS_DIR="$REPO_ROOT/docker/secrets"
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
-printf '%s' "$ADMIN_PASSWORD_HASH" > "$SECRETS_DIR/admin_hash"
-chmod 600 "$SECRETS_DIR/admin_hash"
+get_userns_remap_identity() {
+  local remap_value remap_user subuid_start subgid_start
 
+  remap_value=$(python3 - <<'PYEOF'
+import json
+try:
+    with open('/etc/docker/daemon.json', 'r', encoding='utf-8') as f:
+        value = json.load(f).get('userns-remap', '')
+    print(value if value else '')
+except (FileNotFoundError, json.JSONDecodeError, PermissionError):
+    print('')
+PYEOF
+)
+
+  # Docker user namespace remapping is not enabled.
+  if [ -z "$remap_value" ]; then
+    return 0
+  fi
+
+  # Docker's special "default" value creates and uses the dockremap account.
+  remap_user="${remap_value%%:*}"
+  if [ "$remap_user" = "default" ]; then
+    remap_user="dockremap"
+  fi
+
+  subuid_start=$(awk -F: -v user="$remap_user" '$1 == user { print $2; exit }' /etc/subuid 2>/dev/null || true)
+  subgid_start=$(awk -F: -v user="$remap_user" '$1 == user { print $2; exit }' /etc/subgid 2>/dev/null || true)
+
+  if [ -z "$subuid_start" ] || [ -z "$subgid_start" ]; then
+    echo "ERROR: Docker userns-remap is configured for '$remap_value', but its subordinate UID/GID ranges could not be found." >&2
+    echo "       Check /etc/subuid and /etc/subgid, then re-run setup.sh." >&2
+    exit 1
+  fi
+
+  printf '%s:%s' "$subuid_start" "$subgid_start"
+}
+
+set_secret_permissions() {
+  local secret_file="$1" mapped_identity
+
+  # Standard Docker configuration: root is the only host identity that can read
+  # the secret. This also establishes a known-safe ownership before checking
+  # whether user namespace remapping is active.
+  chown root:root "$secret_file"
+  chmod 600 "$secret_file"
+
+  mapped_identity=$(get_userns_remap_identity)
+  if [ -n "$mapped_identity" ]; then
+    chown "$mapped_identity" "$secret_file"
+    chmod 600 "$secret_file"
+  fi
+}
+
+printf '%s' "$ADMIN_PASSWORD_HASH" > "$SECRETS_DIR/admin_hash"
 printf '%s' "$JWT_SECRET" > "$SECRETS_DIR/jwt_secret"
-chmod 600 "$SECRETS_DIR/jwt_secret"
+set_secret_permissions "$SECRETS_DIR/admin_hash"
+set_secret_permissions "$SECRETS_DIR/jwt_secret"
+
+# Verify the files were written non-empty. An empty or unreadable secrets file
+# causes the backend to fail at startup (jwt.sign throws), which otherwise
+# manifests as a login "Network Error" / nginx 502 timeout.
+if [ ! -s "$SECRETS_DIR/admin_hash" ]; then
+  echo "ERROR: docker/secrets/admin_hash is empty after write. Aborting."
+  exit 1
+fi
+if [ ! -s "$SECRETS_DIR/jwt_secret" ]; then
+  echo "ERROR: docker/secrets/jwt_secret is empty after write. Aborting."
+  exit 1
+fi
 
 echo "  Secrets written to docker/secrets/ (admin_hash, jwt_secret)."
 
