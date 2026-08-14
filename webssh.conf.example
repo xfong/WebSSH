@@ -113,18 +113,20 @@ ADMIN_USERNAME=admin
 # ── Ports ─────────────────────────────────────────────────────────────────────
 
 # HTTPS_PORT
-#   The TCP port on which Nginx listens for HTTPS connections.
+#   The EXTERNAL TCP port published on the host for HTTPS connections.
+#   Docker maps this host port to Nginx's internal HTTPS listener (port 443).
 #   This is the port users type in their browser (e.g. https://server:8443).
 #   If set to 443 (the standard HTTPS port), users do not need to specify a
-#   port in the URL.
-#   Note: ports below 1024 require the container to run with elevated
-#   privileges, which is the default Docker behaviour.
+#   port in the URL. It must be different from HTTP_PORT and must not overlap
+#   the Xpra port range.
 #   Default: 443
 HTTPS_PORT=443
 
 # HTTP_PORT
-#   The TCP port on which Nginx listens for plain HTTP connections.
-#   All HTTP traffic is automatically redirected to HTTPS.
+#   The EXTERNAL TCP port published on the host for plain HTTP connections.
+#   Docker maps this host port to Nginx's internal HTTP listener (port 80).
+#   All HTTP traffic is automatically redirected to HTTPS_PORT. It must be
+#   different from HTTPS_PORT and must not overlap the Xpra port range.
 #   If set to 80 (the standard HTTP port), browsers that omit the port will
 #   be redirected to HTTPS automatically.
 #   Default: 80
@@ -133,11 +135,13 @@ HTTP_PORT=80
 # XPRA_PORT_START
 # XPRA_PORT_END
 #   The range of TCP ports reserved for Xpra X11 session streaming.
-#   Each active X11 GUI session occupies one port from this range.
-#   The range must be large enough to accommodate the maximum number of
-#   concurrent X11 sessions across all users.
-#   Example: a range of 10000–11000 supports up to 1000 concurrent sessions.
-#   Ensure these ports are not used by other services on the host.
+#   Xpra runs directly on the SSH host, not in Docker, so these ports do NOT
+#   appear in `docker compose ps`. Each active user X11 session makes Xpra bind
+#   one port from this range on the host; nginx proxies it privately through the
+#   Docker bridge. The range must be large enough to accommodate the maximum
+#   number of concurrent X11 sessions across all users.
+#   Example: a range of 10000–11000 supports up to 1001 concurrent sessions.
+#   Ensure these ports are not used by other services or HTTP_PORT/HTTPS_PORT.
 #   Default: 10000–11000
 XPRA_PORT_START=10000
 XPRA_PORT_END=11000

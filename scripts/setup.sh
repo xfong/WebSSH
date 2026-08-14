@@ -118,6 +118,37 @@ HTTP_PORT="${HTTP_PORT:-80}"
 XPRA_PORT_START="${XPRA_PORT_START:-10000}"
 XPRA_PORT_END="${XPRA_PORT_END:-11000}"
 
+# Validate the network ports before any files or services are changed. HTTP and
+# HTTPS must use different host ports because Docker cannot bind both protocols
+# to the same TCP port. Xpra is host-native (not a Compose service), but its
+# allocation range still needs valid, non-overlapping port numbers.
+validate_port() {
+  local name="$1" value="$2"
+  if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+    echo "ERROR: $name must be an integer from 1 to 65535; got '$value'."
+    exit 1
+  fi
+}
+
+validate_port "HTTPS_PORT" "$HTTPS_PORT"
+validate_port "HTTP_PORT" "$HTTP_PORT"
+validate_port "XPRA_PORT_START" "$XPRA_PORT_START"
+validate_port "XPRA_PORT_END" "$XPRA_PORT_END"
+
+if [ "$HTTPS_PORT" -eq "$HTTP_PORT" ]; then
+  echo "ERROR: HTTPS_PORT and HTTP_PORT must be different because both are published by nginx."
+  exit 1
+fi
+if [ "$XPRA_PORT_START" -gt "$XPRA_PORT_END" ]; then
+  echo "ERROR: XPRA_PORT_START must not be greater than XPRA_PORT_END."
+  exit 1
+fi
+if { [ "$HTTPS_PORT" -ge "$XPRA_PORT_START" ] && [ "$HTTPS_PORT" -le "$XPRA_PORT_END" ]; } || \
+   { [ "$HTTP_PORT" -ge "$XPRA_PORT_START" ] && [ "$HTTP_PORT" -le "$XPRA_PORT_END" ]; }; then
+  echo "ERROR: the Xpra port range must not include HTTPS_PORT or HTTP_PORT."
+  exit 1
+fi
+
 echo ""
 
 # ── 4. Admin password: reuse existing hash or generate a new one ──────────────

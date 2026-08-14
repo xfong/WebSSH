@@ -3,11 +3,21 @@ services:
     image: nginx:bookworm
     container_name: webssh_nginx
     restart: unless-stopped
+    # Publish the configurable host-side ports to nginx's fixed internal
+    # HTTPS (443) and HTTP (80) listeners. setup.sh writes these values to .env
+    # from HTTPS_PORT and HTTP_PORT in webssh.conf.
     ports:
-      - "443:443"
-      - "80:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    environment:
+      # Used only to render the HTTP → HTTPS redirect destination in nginx.
+      HTTPS_PORT: "${HTTPS_PORT:-443}"
+    # The custom renderer writes nginx.conf from the template, then starts nginx.
+    # It replaces the image's default command so rendering occurs every start.
+    command: ["/bin/sh", "/usr/local/bin/webssh-render-nginx"]
     volumes:
-      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/nginx.conf.template:/etc/nginx/webssh-nginx.conf.template:ro
+      - ./docker/nginx/render-config.sh:/usr/local/bin/webssh-render-nginx:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:

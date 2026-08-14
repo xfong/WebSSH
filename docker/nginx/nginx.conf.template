@@ -16,6 +16,8 @@ http {
     }
 
     server {
+        # nginx always listens on its internal HTTPS port. Docker Compose
+        # publishes the configurable host-side HTTPS_PORT to this port.
         listen 443 ssl;
         server_name _;
 
@@ -124,8 +126,12 @@ http {
 
     # ── Redirect HTTP → HTTPS ─────────────────────────────────────────────────
     server {
+        # nginx always listens on its internal HTTP port. Docker Compose
+        # publishes the configurable host-side HTTP_PORT to this port.
         listen 80;
         server_name _;
-        return 301 https://$host$request_uri;
+        # HTTPS_PORT is rendered by render-config.sh so a non-standard
+        # host HTTPS port (for example 8443) is preserved on redirect.
+        return 301 https://$host:${HTTPS_PORT}$request_uri;
     }
 }

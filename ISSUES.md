@@ -195,6 +195,15 @@ The backend correctly failed fast with `FATAL: JWT_SECRET is empty`, but PM2 con
 
 **Fix:** `setup.sh` now detects Docker's configured `userns-remap` identity from `/etc/docker/daemon.json` and resolves its first subordinate UID/GID from `/etc/subuid` and `/etc/subgid`. It retains mode `0600`, but changes the secret file owner to that mapped identity before the container starts. Without `userns-remap`, files remain host-owned `root:root` with mode `0600`. The script aborts with a clear error if remapping is configured but its subordinate ranges cannot be resolved.
 
+### Issue 31 — Configured HTTP and HTTPS Ports Were Written but Never Published by Docker ✅ RESOLVED
+**Area:** Infrastructure / `docker-compose.yml`, `docker/nginx/`, `scripts/setup.sh`, `webssh.conf.example`
+
+`setup.sh` read `HTTPS_PORT`, `HTTP_PORT`, `XPRA_PORT_START`, and `XPRA_PORT_END` from `webssh.conf` and wrote the values to `.env`. However, the nginx service used literal Docker port mappings (`443:443` and `80:80`), so changing `HTTPS_PORT` or `HTTP_PORT` had no effect on the actual host ports. This made clean installations ignore the stated configuration.
+
+**Fix:** Docker Compose now publishes `${HTTPS_PORT}:443` and `${HTTP_PORT}:80`, preserving standard fixed nginx container listeners while making the host mappings configurable. A small nginx configuration renderer interpolates `HTTPS_PORT` into the HTTP-to-HTTPS redirect target so `HTTP_PORT=8080` correctly redirects to `https://host:8443` when `HTTPS_PORT=8443`. `setup.sh` validates that all configured ports are numeric and valid, that HTTP and HTTPS ports differ, and that neither overlaps the Xpra range.
+
+`XPRA_PORT_START` and `XPRA_PORT_END` were already functioning: Xpra runs directly on the SSH host rather than in Docker, so those host-native listeners are deliberately absent from `docker compose ps`. The configuration documentation now makes this distinction explicit. A lightweight regression check validates the non-standard port configuration without requiring Docker.
+
 ---
 
-*Last updated: 2026-08-13*
+*Last updated: 2026-08-14*
